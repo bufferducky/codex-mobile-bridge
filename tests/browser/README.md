@@ -8,6 +8,8 @@
 
 ## 进度说明与工具摘要
 
+Android 合成页面中加载 `android-density.browser.js` 后调用 `runAndroidDensityChecks()`，核验模型标识隐藏、小图标操作栏、复制与引用的原始正文、复制成功反馈、编辑和分支能力限制、流式更新状态、图标点击区域和执行详情间距。不访问真实剪贴板、不修改真实聊天。
+
 在已加载生产 `timeline.js`、Markdown 和聊天样式的隔离页面中加载 `progress-timeline.browser.js`，调用并等待 `runProgressTimelineChecks()`。分别以 320、390、844、1440 px 视口运行中英文检查，核验进度说明直接显示、连续工具和单次异常合并折叠、任务级错误与审批元数据保留，以及流式更新、显示开关和历史前插时的展开状态。详情请求只返回闭包中的合成结果，不访问真实聊天。`{keepOpen:true}` 保留示例供视觉检查，结束后调用 `window.__progressTimelinePreview.cleanup()`。
 
 同一隔离页面可加载 `live-activity.browser.js` 并调用 `runLiveActivityChecks()`，检查仅元数据变化时当前搜索/读取目标更新、原生耗时、工具折叠与显示开关、历史页不覆盖实时状态、审批优先、完成/断线/切换聊天时清理状态，以及长文件名与计时不重叠。`{keepOpen:true}` 保留样例，结束后调用 `window.__liveActivityPreview.cleanup()`。本地计时与后台暂停另由 `live-activity.test.cjs` 使用可控时钟验证。

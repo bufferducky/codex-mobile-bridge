@@ -6,10 +6,10 @@
 (()=>{
   const button=document.createElement('button'),result=document.createElement('pre');
   const dismiss=document.createElement('button');dismiss.textContent='关闭检查结果';dismiss.hidden=true;
-  dismiss.style.cssText='position:fixed;top:8px;right:8px;z-index:10000;padding:8px;background:#226e54;color:white';
+  dismiss.style.cssText='position:fixed;top:8px;right:8px;z-index:10000;padding:8px;background:var(--accent);color:var(--accent-ink)';
   dismiss.onclick=()=>{result.hidden=true;button.hidden=true;dismiss.hidden=true;};
   button.textContent='运行界面检查';button.id='android-ui-checks';
-  button.style.cssText='position:fixed;bottom:8px;right:8px;z-index:9999;padding:8px;background:#226e54;color:white;border:0;border-radius:8px';
+  button.style.cssText='position:fixed;bottom:8px;right:8px;z-index:9999;padding:8px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px';
   result.id='android-ui-results';result.style.cssText='position:fixed;bottom:50px;right:8px;z-index:9999;max-width:95vw;max-height:50vh;overflow:auto;background:white;color:#242b29;padding:16px;border:1px solid #ddd;white-space:pre-wrap';result.hidden=true;
   document.body.append(button,result,dismiss);
   button.onclick=async()=>{
@@ -26,7 +26,7 @@
       await clientNavigation.choose('claude');check(clientNavigation.provider==='codex','Other providers do not switch this Android view');
       const session=document.querySelector('.session');check(!!session,'Synthetic chat list loaded');session.click();
       await wait(()=>!document.getElementById('chat').hidden&&window.BridgeWorkbench?.current&&typeof ChatTimeline!=='undefined'&&typeof chatTimeline!=='undefined'&&chatTimeline?.sequence>=0);
-      check(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#226e54','Green default accent');
+      check(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()==='#4c6f98','Misty blue-gray default accent');
       const draft=document.getElementById('message');
       check(draft.closest('.android-message-input')!==null,'Compact input contains the real textarea');
       check(document.getElementById('send-mode').closest('.composer-tools')!==null,'Send mode still accessible');

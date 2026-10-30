@@ -1,6 +1,31 @@
 /* Android owns host choices; these rules never infer a device from width. */
-:root[data-bridge-host=android] {--accent:#226e54;--soft:#eaf4ee}
-:root[data-bridge-host=android][data-theme=light] {--surface:#f5f6f5;--text:#242b29;--muted:#727d78;--line:#e6ebe7;--user:#f5f6f5;--code:#f5f6f5}
+:root[data-bridge-host=android] {--accent:#4c6f98;--green:#4c6f98;--soft:#4c6f9812;--page:#f5f7fa;--surface:#e8eef4;--composer-surface:#f0f3f7;--raised:#f9fbfe;--text:#293747;--muted:#5c6877;--line:#d8e2ec;--user:#dfe8f2;--code:#e7edf4}
+:root[data-bridge-host=android][data-theme=dark] {--page:#1c2530;--surface:#232f3d;--composer-surface:#202b37;--raised:#293747;--text:#e0e8f1;--muted:#acb5c0;--line:#3d4d60;--user:#2e4156;--code:#233142}
+:root[data-bridge-host=android] :is(.phone-header,#chat .chat-head) {background:var(--surface)}
+:root[data-bridge-host=android] :is(input,textarea)::placeholder {color:var(--muted);opacity:1}
+:root[data-bridge-host=android] .message-actions button {color:var(--muted)}
+:root[data-bridge-host=android] .message-actions button:is(:hover,:focus-visible) {color:var(--green)}
+:root[data-bridge-host=android] .message.assistant>.who {display:none}
+:root[data-bridge-host=android] .message {margin-block:10px}
+:root[data-bridge-host=android] .message.user {margin-block:8px;padding-block:8px}
+:root[data-bridge-host=android] .message.progress-message {margin-block:8px}
+:root[data-bridge-host=android] .process-group {margin:0 0 4px}
+:root[data-bridge-host=android] .process-group>summary {min-height:28px;padding:4px 0;line-height:20px}
+:root[data-bridge-host=android] .message:has(+.process-group) {margin-bottom:2px}
+:root[data-bridge-host=android] .process-group+.message {margin-top:4px}
+:root[data-bridge-host=android] .message-body.markdown-body :is(p,ul,ol,blockquote,pre,.markdown-table) {margin-bottom:8px}
+:root[data-bridge-host=android] .message-body.markdown-body>:last-child {margin-bottom:0}
+/* Small glyphs, direct actions and non-overlapping touch targets. Labels stay in the DOM for native clipboard feedback. */
+:root[data-bridge-host=android] .message .message-actions {display:flex;align-items:center;gap:2px;margin:2px 0 0;flex-wrap:wrap;line-height:1}
+:root[data-bridge-host=android] .message .message-actions button {position:relative;display:inline-grid;place-items:center;flex:none;width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:6px;font-size:0;line-height:0;background:transparent}
+:root[data-bridge-host=android] .message .message-actions button:is(:hover,:focus-visible) {background:var(--soft)}
+:root[data-bridge-host=android] .message .message-actions button::before {content:'';width:14px;height:14px;background:currentColor;mask:var(--message-action-icon) center/contain no-repeat}
+:root[data-bridge-host=android] .message-actions .message-copy {--message-action-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%228%22%20y%3D%228%22%20width%3D%2212%22%20height%3D%2212%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M16%208V5a2%202%200%200%200-2-2H5a2%202%200%200%200-2%202v9a2%202%200%200%200%202%202h3%22%2F%3E%3C%2Fsvg%3E")}
+:root[data-bridge-host=android] .message-actions .message-quote {--message-action-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m9%205-6%206%206%206M3%2011h10a7%207%200%200%201%207%207v2%22%2F%3E%3C%2Fsvg%3E")}
+:root[data-bridge-host=android] .message-actions .message-edit {--message-action-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m14%205%205%205M4%2020l5-1L20%208a3.5%203.5%200%200%200-5-5L4%2014v6Z%22%2F%3E%3C%2Fsvg%3E")}
+:root[data-bridge-host=android] .message-actions .message-fork {--message-action-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225%22%20r%3D%222%22%2F%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%225%22%20r%3D%222%22%2F%3E%3Ccircle%20cx%3D%226%22%20cy%3D%2219%22%20r%3D%222%22%2F%3E%3Cpath%20d%3D%22M6%207v10M18%207v2a5%205%200%200%201-5%205H6%22%2F%3E%3C%2Fsvg%3E")}
+:root[data-bridge-host=android] .message-actions button[data-feedback=copied] {--message-action-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m5%2012%204%204L19%206%22%2F%3E%3C%2Fsvg%3E")}
+:root[data-bridge-host=android] .message-actions button[data-feedback=copied] {color:var(--green)}
 :root[data-bridge-host=android] .client-switch-dock,
 :root[data-bridge-host=android] #client-switch-toggle,
 :root[data-bridge-host=android] #chat>.chat-head>.client-icon {display:none!important}
@@ -12,7 +37,7 @@
 :root[data-bridge-host=android] #chat .status {background:none;max-width:76px;padding:5px 4px;font-size:11px}
 :root[data-bridge-host=android] #chat .status::before {content:'•';padding-right:4px}
 :root[data-bridge-host=android] #chat>.workbench-tabs:not(:has(.wb-tab:not([data-tab=chat]))) {display:none}
-:root[data-bridge-host=android] #chat .composer {margin:0 10px;padding:0 0 max(5px,env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+:root[data-bridge-host=android] #chat .composer {margin:0 10px;padding:0 0 max(5px,env(safe-area-inset-bottom));border-top:0;background:var(--composer-surface)}
 :root[data-bridge-host=android] .android-composer-toolbar {display:flex;align-items:center;min-width:0}
 :root[data-bridge-host=android] #composer .composer-tools {flex:1;display:flex;flex-wrap:nowrap;gap:0;margin:0;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;mask-image:linear-gradient(to right,#000 calc(100% - 8px),transparent)}
 :root[data-bridge-host=android] #composer .tool-button {flex:none;min-height:44px;border:0;border-radius:8px;padding:5px 8px;font-size:12px;white-space:nowrap}
@@ -20,7 +45,7 @@
 :root[data-bridge-host=android] #composer select {flex:none;width:auto;max-width:120px;min-height:44px;border:0;background:transparent;padding:5px 4px;font-size:12px;margin:0;color:var(--muted)}
 :root[data-bridge-host=android] #composer .composer-toggle {flex:none;min-width:36px;min-height:44px;width:36px;height:44px;margin:0}
 :root[data-bridge-host=android] #composer .compose-bottom {display:none}
-:root[data-bridge-host=android] .android-message-input {display:flex;align-items:flex-end;gap:2px;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:0 3px;min-height:46px}
+:root[data-bridge-host=android] .android-message-input {display:flex;align-items:flex-end;gap:2px;border:1px solid var(--line);background:var(--raised);border-radius:14px;padding:0 3px;min-height:46px}
 :root[data-bridge-host=android] #composer #message {flex:1;min-width:0;min-height:44px;height:44px;max-height:160px;border:0;border-radius:0;background:transparent;padding:10px 5px;line-height:24px}
 :root[data-bridge-host=android] #composer :is(.attach-button,.compose-actions button) {flex:none;min-width:44px;min-height:44px;width:44px;height:44px;padding:0;display:grid;place-items:center}
 :root[data-bridge-host=android] #composer .compose-actions {display:flex;gap:2px;align-items:center}

@@ -128,6 +128,10 @@ class ChatTimeline {
     this.newer=elements.newer||document.getElementById('newer');
     this.activityStatus=elements.working?new ChatActivityStatus(elements.working):null;
     this.abort=new AbortController();this.rows=new Map();this.nodes=new Map();this.details=new Map();this.processGroups=new Map();
+    this.compactActions=typeof BridgeHost!=='undefined'&&BridgeHost.kind()==='android';
+    if(this.compactActions)this.actionLabelsObserver=new MutationObserver(records=>{
+      for(const record of records){const target=record.target.nodeType===1?record.target:record.target.parentElement,button=target?.closest('button');if(button)this.labelAction(button);}
+    });
     this.mermaidScope=window.BridgeMermaidCards?.createScope();
     this.files=new Map();this.sequence=-1;this.epoch='';this.before=null;this.hasMore=false;
     this.busy=false;this.generation=0;this.windowRevision=0;this.following=true;this.lastTop=0;this.retryCount=0;
@@ -155,7 +159,7 @@ class ChatTimeline {
     this.resize=new ResizeObserver(()=>this.restore(this.anchor,this.following));
     this.resize.observe(this.container);
   }
-  dispose(){this.abort.abort();this.activityStatus?.dispose();window.BridgeMermaidCards?.clearScope(this.mermaidScope);clearTimeout(this.startRetry);this.resize.disconnect();this.viewport.removeEventListener('scroll',this.onScroll);this.viewport.removeEventListener('wheel',this.onWheel);this.viewport.removeEventListener('touchstart',this.onTouchStart);this.viewport.removeEventListener('touchmove',this.onTouchMove);this.newer.hidden=true;}
+  dispose(){this.abort.abort();this.actionLabelsObserver?.disconnect();this.activityStatus?.dispose();window.BridgeMermaidCards?.clearScope(this.mermaidScope);clearTimeout(this.startRetry);this.resize.disconnect();this.viewport.removeEventListener('scroll',this.onScroll);this.viewport.removeEventListener('wheel',this.onWheel);this.viewport.removeEventListener('touchstart',this.onTouchStart);this.viewport.removeEventListener('touchmove',this.onTouchMove);this.newer.hidden=true;}
   atBottom(){return this.viewport.scrollHeight-this.viewport.scrollTop-this.viewport.clientHeight<110;}
   nearTop(){const nodes=[...this.container.children].filter(n=>!n.hidden);return nodes.length>0&&nodes.slice(0,11).some(n=>n.getBoundingClientRect().bottom>=this.viewport.getBoundingClientRect().top);}
   capture(accept=()=>true){if(!this.viewport.clientHeight)return this.anchor;const top=this.viewport.getBoundingClientRect().top;const nodes=[...this.container.children].filter(n=>!n.hidden&&accept(n));const node=nodes.find(n=>n.getBoundingClientRect().bottom>top)||nodes[nodes.length-1];return node?{key:node.dataset.key,offset:node.getBoundingClientRect().top-top}:null;}
@@ -378,6 +382,11 @@ class ChatTimeline {
       const actions=document.createElement('div');actions.className='message-actions';
       const copy=document.createElement('button');copy.type='button';copy.className='plain message-copy';copy.textContent=timelineText('复制');copy.onclick=()=>window.BridgeClipboard?.copy(()=>this.fullText(row),copy);actions.append(copy);node.append(actions);
       const quote=document.createElement('button');quote.type='button';quote.className='plain message-quote';quote.textContent=timelineText('引用');quote.onclick=()=>node.dispatchEvent(new CustomEvent('bridge-compose-quote',{bubbles:true,detail:{getText:()=>this.fullText(row),source:row.key}}));actions.append(quote);
+      if(this.compactActions){
+        for(const button of actions.children)this.labelAction(button);
+        // Observe only action labels, including the native clipboard's busy/success feedback.
+        this.actionLabelsObserver.observe(actions,{subtree:true,childList:true,characterData:true});
+      }
     }
     if(row.attachments?.length){
       const attachments=document.createElement('div');attachments.className='timeline-attachments';
@@ -420,11 +429,18 @@ class ChatTimeline {
       }while(true);
     })();
   }
+  labelAction(button){
+    if(!this.compactActions)return;
+    button.title=button.textContent;button.setAttribute('aria-label',button.textContent);
+    button.dataset.feedback=button.textContent===timelineText('已复制')?'copied':button.textContent===timelineText('正在读取…')?'busy':'';
+  }
   refreshActions(){
+    this.actionLabelsObserver?.disconnect();
     for(const [key,{node}] of this.nodes){
       const row=this.rows.get(key)?.row,bar=node.querySelector('.message-actions');if(!bar||!row)continue;
+      if(this.compactActions){for(const button of bar.children)this.labelAction(button);this.actionLabelsObserver.observe(bar,{subtree:true,childList:true,characterData:true});}
       if(!this.onAction)continue;
-      const add=(action,label,disabled)=>{const cls=action==='fork'?'message-fork':'message-edit';let b=bar.querySelector('.'+cls);if(!b){b=document.createElement('button');b.type='button';b.className='plain '+cls;bar.append(b);}b.textContent=timelineText(label);b.disabled=disabled;b.onclick=()=>this.onAction(action,row,this);};
+      const add=(action,label,disabled)=>{const cls=action==='fork'?'message-fork':'message-edit';let b=bar.querySelector('.'+cls);if(!b){b=document.createElement('button');b.type='button';b.className='plain '+cls;bar.append(b);}b.textContent=timelineText(label);this.labelAction(b);b.disabled=disabled;b.onclick=()=>this.onAction(action,row,this);};
       for(const action of bar.querySelectorAll('.message-edit,.message-fork'))action.hidden=!this.canEdit();
       if(row.editable&&this.canEdit()){const latest=this.meta?.latestUserTurnId===row.turnId;add(latest?'edit':'edit-fork',latest?'编辑并重新发送':'编辑并新建分支',row.turnStatus==='inProgress'||latest&&this.meta?.status==='active');}
       if(row.forkable&&this.canEdit())add('fork','从这里分支',false);
@@ -436,6 +452,7 @@ class ChatTimeline {
     this.refreshActions();
     this.container.querySelectorAll('.message-copy').forEach(n=>n.textContent=timelineText('复制'));
     this.container.querySelectorAll('.message-quote').forEach(n=>n.textContent=timelineText('引用'));
+    this.container.querySelectorAll('.message-actions button').forEach(n=>this.labelAction(n));
     this.container.querySelectorAll('.code-copy').forEach(n=>n.textContent=timelineText('复制代码'));
     this.historyStatus();
     for(const [key,entry] of this.nodes){

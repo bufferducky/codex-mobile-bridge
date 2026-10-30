@@ -26,8 +26,7 @@ const ChatAppearance=(()=>{
     return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
   }
   function contrast(a,b){const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);}
-  function colors(accent,dark){
-    const background=dark?'#17181c':'#ffffff';
+  function colors(accent,dark,background=dark?'#17181c':'#ffffff'){
     let text=accent;
     const rgb=accent.match(/[0-9a-f]{2}/gi).map(v=>parseInt(v,16));
     for(let step=1;contrast(text,background)<4.5&&step<=20;step++){
@@ -43,7 +42,10 @@ if(typeof document!=='undefined')(()=>{
   const get=id=>document.getElementById(id),root=document.documentElement;
   const key='bridge-appearance',system=window.matchMedia('(prefers-color-scheme: dark)');
   let saved;try{saved=JSON.parse(localStorage.getItem(key));}catch{}
-  const defaults={...ChatAppearance.defaults,...(BridgeHost.kind()==='android'?{accent:'#226e54',theme:'light'}:{})};
+  const defaults={...ChatAppearance.defaults,...(BridgeHost.kind()==='android'?{accent:'#4c6f98',theme:'light'}:{})};
+  // Upgrade the previous Android default while retaining custom accents and all other preferences.
+  const migrateAccent=BridgeHost.kind()==='android'&&saved&&typeof saved==='object'&&saved.accent?.toLowerCase?.()==='#226e54';
+  if(migrateAccent)saved={...saved,accent:defaults.accent};
   let settings=ChatAppearance.normalize({...defaults,...(saved&&typeof saved==='object'?saved:{})}),collapsed=false;
   const fontLibrary=new BridgeFontLibrary.Library();
   const composer=get('composer'),body=get('composer-body'),toggle=get('composer-toggle'),message=get('message');
@@ -56,8 +58,12 @@ if(typeof document!=='undefined')(()=>{
   function save(){try{localStorage.setItem(key,JSON.stringify(settings));}catch{}}
   function apply(){
     const dark=settings.theme==='dark'||settings.theme==='system'&&system.matches;
-    const colors=ChatAppearance.colors(settings.accent,dark);
     root.dataset.theme=dark?'dark':'light';root.dataset.density=settings.density;
+    const palette=getComputedStyle(root),background=palette.getPropertyValue('--page').trim();
+    // Accent text also appears on tinted message and selected surfaces.
+    const textBackground=BridgeHost.kind()==='android'?palette.getPropertyValue('--user').trim():background;
+    const accent=BridgeHost.kind()==='android'&&dark&&settings.accent.toLowerCase()===defaults.accent?'#8eafd2':settings.accent;
+    const colors=ChatAppearance.colors(accent,dark,textBackground);
     root.dataset.showActivity=String(settings.showActivity);
     root.dataset.showComputer=String(settings.showComputer);get('appearance-computer').checked=settings.showComputer;
     root.dataset.showPushplus=String(settings.showPushplus);root.dataset.showAccounts=String(settings.showAccounts);
@@ -69,10 +75,10 @@ if(typeof document!=='undefined')(()=>{
     root.dataset.showToolImages=String(settings.showToolImages);
     get('appearance-tool-images').checked=settings.showToolImages;
     if(typeof chatTimeline!=='undefined')chatTimeline?.setVisibility(settings);
-    root.style.setProperty('--accent',settings.accent);
+    root.style.setProperty('--accent',accent);
     root.style.setProperty('--accent-ink',colors.ink);
     root.style.setProperty('--green',colors.text);
-    root.style.setProperty('--soft',settings.accent+(dark?'29':'12'));
+    root.style.setProperty('--soft',accent+(dark?'29':'12'));
     root.style.setProperty('--message-size',settings.fontSize+'px');
     root.style.setProperty('--code-size',settings.codeSize+'px');
     const families={system:'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',sans:'sans-serif',serif:'serif',custom:'BridgeCustomBody, system-ui, sans-serif'};
@@ -81,7 +87,7 @@ if(typeof document!=='undefined')(()=>{
     root.style.setProperty('--reading-leading',settings.lineHeight);
     get('appearance-font-family').value=settings.fontFamily;get('appearance-code-family').value=settings.codeFontFamily;
     get('appearance-leading').value=settings.lineHeight;get('appearance-leading-value').textContent=settings.lineHeight.toFixed(2);
-    document.querySelector('meta[name="theme-color"]').content=dark?'#17181c':'#ffffff';
+    document.querySelector('meta[name="theme-color"]').content=background;
     for(const [id,value] of Object.entries({theme:settings.theme,accent:settings.accent,font:settings.fontSize,code:settings.codeSize,density:settings.density}))get('appearance-'+id).value=value;
     get('appearance-font-value').textContent=settings.fontSize+' px';get('appearance-code-value').textContent=settings.codeSize+' px';
     get('appearance-activity').checked=settings.showActivity;get('appearance-reasoning').checked=settings.showReasoning;get('appearance-process').checked=settings.showProcess;
@@ -151,6 +157,7 @@ if(typeof document!=='undefined')(()=>{
   };
   system.addEventListener('change',()=>{if(settings.theme==='system')preserveReading(apply);});
   window.BridgePresentation={resizeMessage,relabel,openChat:()=>{setCollapsed(false);requestAnimationFrame(resizeMessage);},showError:()=>setCollapsed(false)};
+  if(migrateAccent)save();
   apply();relabel();resizeMessage();
   document.body.classList.toggle('chat-detail',!get('app').hidden&&get('app').classList.contains('chat-open'));
 })();
