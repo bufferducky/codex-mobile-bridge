@@ -51,11 +51,11 @@
       check(group.querySelectorAll('.timeline-row').length===3,'Streaming appends actual tool rows');
       check(messages.lastElementChild.dataset.key==='answer','Final answer stays outside process group');
       timeline.apply(page(3,[tool('failed',5,{exitCode:1})]));timeline.setVisibility({showProcess:false});
-      check(messages.querySelector(':scope > .execution-failure')!==null,'Failure remains outside group when process display is off');
-      check(!messages.querySelector('.execution-failure').hidden,'Failure remains visible');
+      check(messages.querySelector(':scope > .execution-failure')===null,'Tool failure does not create a separate warning card');
+      check(messages.querySelector('.process-group-issues')!==null,'Tool failure retains a visible issue summary when process display is off');
       timeline.setVisibility({showProcess:true});check(messages.querySelector('.process-group').open,'Visibility changes preserve expanded process');
       timeline.apply(page(4,[tool('earlier',-2),{key:'earlier-answer',turnId:'round',role:'assistant',order:-1,version:'v1',text:'earlier stage'}]),false,true);
-      check(messages.querySelectorAll('.process-group').length===2,'Earlier history adds a distinct chronological run');
+      check(messages.querySelectorAll('.process-group').length===3,'Earlier history adds a distinct chronological run');
       check(group.open&&group.querySelector('[data-key=read]')!==null,'Earlier runs never steal the expanded state of the current run');
       timeline.dispose();isolated.remove();isolated=null;
       // Load a bundled fixture font through the actual appearance import handler.

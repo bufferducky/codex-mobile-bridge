@@ -6,6 +6,12 @@
 
 这些脚本不会由 `npm run test:desktop` 执行。该命令只发现 `tests/` 和 `mobile/tests/` 下的 `*.test.js`、`*.test.cjs`、`*.test.mjs`；浏览器检查应单独记录实际执行与未执行情况。
 
+## 进度说明与工具摘要
+
+在已加载生产 `timeline.js`、Markdown 和聊天样式的隔离页面中加载 `progress-timeline.browser.js`，调用并等待 `runProgressTimelineChecks()`。分别以 320、390、844、1440 px 视口运行中英文检查，核验进度说明直接显示、连续工具和单次异常合并折叠、任务级错误与审批元数据保留，以及流式更新、显示开关和历史前插时的展开状态。详情请求只返回闭包中的合成结果，不访问真实聊天。`{keepOpen:true}` 保留示例供视觉检查，结束后调用 `window.__progressTimelinePreview.cleanup()`。
+
+同一隔离页面可加载 `live-activity.browser.js` 并调用 `runLiveActivityChecks()`，检查仅元数据变化时当前搜索/读取目标更新、原生耗时、工具折叠与显示开关、历史页不覆盖实时状态、审批优先、完成/断线/切换聊天时清理状态，以及长文件名与计时不重叠。`{keepOpen:true}` 保留样例，结束后调用 `window.__liveActivityPreview.cleanup()`。本地计时与后台暂停另由 `live-activity.test.cjs` 使用可控时钟验证。
+
 ## 启动恢复检查
 
 运行 `python3 -B tests/browser/bootstrap-fixture.py`，在一个测试标签页访问它打印的 loopback 地址。用 `?case=success` 等参数选择场景，完整清单见夹具文件头。夹具提供生产 Web 资源与合成认证，不连接真实网关；每次导航重置故障计数，不能多页同时操作。

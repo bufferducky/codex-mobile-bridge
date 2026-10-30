@@ -126,9 +126,9 @@ async function runTimelineVisibilityTests() {
   timeline.setVisibility({showReasoning:false,showProcess:true});
   check(!visible().includes('reasoning')&&visible().includes('command'),'Reasoning can be hidden independently');
   timeline.setVisibility({showReasoning:true,showProcess:false});
-  check(visible().includes('reasoning')&&!visible().includes('progress')&&!visible().includes('command'),'Activity filter includes tools and commentary but retains reasoning');
+  check(visible().includes('reasoning')&&visible().includes('progress')&&!visible().includes('command'),'Activity filter hides tools while retaining reasoning and public progress');
   timeline.setVisibility({showReasoning:false,showProcess:false});
-  check(JSON.stringify(visible())===JSON.stringify(['user','final','legacy','error']),'Reply view retains user text, final replies, unknown-phase replies and errors');
+  check(JSON.stringify(visible())===JSON.stringify(['user','progress','final','legacy','error']),'Reply view retains public progress, user text, replies and errors');
   check(meta.requests[0].id==='pending'&&timeline.pendingRequests,'Pending user requests remain available');
   timeline.viewport.scrollTop=timeline.nodes.get('final').node.offsetTop+20;
   timeline.following=false;timeline.newer.hidden=true;

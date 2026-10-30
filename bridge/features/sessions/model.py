@@ -252,6 +252,121 @@ def context_usage(state):
             'cached': state.get('tokenUsageFromHistory') is True}
 
 
+def current_activity(turns, active):
+    """Describe the current or most recent action of the active native turn."""
+    if not active:
+        return None
+    turn = next((turn for turn in reversed(turns) if turn.get('status') == 'inProgress'), None)
+    if turn is None:
+        return None
+    activity = {'turnId': turn.get('turnId'), 'kind': 'thinking'}
+    started = turn.get('turnStartedAtMs')
+    if isinstance(started, (int, float)) and not isinstance(started, bool) and 0 < started < 10**14:
+        activity['startedAt'] = started
+
+    def target(value):
+        if not isinstance(value, str):
+            return ''
+        # Show only a short native file/folder name, never command arguments.
+        value = value.strip().rstrip('/\\').replace('\\', '/').rsplit('/', 1)[-1]
+        return re.sub(r'[\x00-\x1f\x7f]', '', value)[:160]
+
+    def text(value):
+        return re.sub(r'[\x00-\x1f\x7f]', ' ', value).strip()[:4096] if isinstance(value, str) else ''
+
+    def command_text(value):
+        value = text(value)
+        value = re.sub(r'''(?i)(--(?:api[-_]?key|access[-_]?token|token|password|secret)(?:=|\s+))("[^"]*"|'[^']*'|\S+)''',
+                       lambda match: match[1] + '<redacted>', value)
+        return re.sub(r'''(?i)\b([A-Z0-9_]*(?:API_KEY|TOKEN|PASSWORD|SECRET)=)("[^"]*"|'[^']*'|\S+)''',
+                      lambda match: match[1] + '<redacted>', value)
+
+    def location(value, cwd):
+        value = text(value).replace('\\', '/')
+        root = text(cwd).replace('\\', '/').rstrip('/')
+        windows = bool(re.match(r'^[A-Za-z]:/', value) or value.startswith('//'))
+        prefix = root + '/'
+        inside = value.lower().startswith(prefix.lower()) if windows else value.startswith(prefix)
+        if root and inside:
+            return value[len(prefix):]
+        # Native relative paths already describe the search scope. Do not turn
+        # supply/src/main into just main. Keep the full path separately too.
+        return target(value) if value.startswith('/') or re.match(r'^[A-Za-z]:/', value) else value
+
+    items = items_array(turn.get('items'))
+    item = next((item for item in reversed(items) if item.get('status') == 'inProgress'), None)
+    if item is None:
+        if items and items[-1].get('type') in ('agentMessage', 'assistantMessage') and items[-1].get('phase') == 'final_answer':
+            activity['kind'] = 'replying'
+            return activity
+        # Fast tools can finish between phone polls. Empty reasoning events do
+        # not erase the last real action; retain its explicit completion state.
+        tools = {'commandExecution', 'mcpToolCall', 'dynamicToolCall', 'fileChange', 'FileChange', 'imageView', 'ImageView'}
+        item = next((item for item in reversed(items)
+                     if item.get('type') in tools and item.get('status') in ('completed', 'failed', 'error', 'declined', 'cancelled')), None)
+        if item is None:
+            return activity
+    activity['itemId'] = item.get('id')
+    activity['status'] = item.get('status')
+    kind = item.get('type')
+    actions = []
+    summary = None
+    if kind == 'commandExecution':
+        activity['kind'] = 'command'
+        native = item.get('commandActions')
+        def command_action(action):
+            action_kind = {'search': 'search', 'read': 'read', 'listFiles': 'list', 'list_files': 'list'}.get(action.get('type'), 'command')
+            descriptor = {'kind': action_kind}
+            if action_kind == 'command':
+                descriptor['command'] = command_text(action.get('command') or item.get('command'))
+            else:
+                path = text(action.get('path'))
+                descriptor['target'] = (text(action.get('displayLabel') or action.get('name')) or target(path)) if action_kind == 'read' else location(path, item.get('cwd'))
+                if path:
+                    descriptor['path'] = path
+                if action_kind == 'search' and isinstance(action.get('query'), str):
+                    descriptor['query'] = text(action['query'])
+            return descriptor
+        if isinstance(native, list):
+            budget = 0
+            for action in native:
+                if not isinstance(action, dict):
+                    continue
+                descriptor = command_action(action)
+                size = len(json.dumps(descriptor, ensure_ascii=False).encode())
+                if len(actions) >= 64 or budget + size > 48 * 1024:
+                    activity['actionsOmitted'] = len(native) - len(actions)
+                    break
+                actions.append(descriptor)
+                budget += size
+            last = next((action for action in reversed(native) if isinstance(action, dict)), None)
+            if last is not None:
+                summary = command_action(last)
+        if not actions:
+            activity['command'] = command_text(item.get('command'))
+    elif kind in ('mcpToolCall', 'dynamicToolCall'):
+        activity.update(kind='tool', target=' · '.join(filter(None, [text(item.get('server')), text(item.get('tool') or item.get('toolName'))])))
+    elif kind in ('fileChange', 'FileChange'):
+        activity['kind'] = 'edit'
+        changes = item.get('changes')
+        paths = list(changes) if isinstance(changes, dict) else [change.get('path') for change in changes if isinstance(change, dict)] if isinstance(changes, list) else []
+        for path in paths[:64]:
+            if isinstance(path, str):
+                actions.append({'kind': 'edit', 'target': location(path, item.get('cwd')), 'path': text(path)})
+        if len(paths) > 64:
+            activity['actionsOmitted'] = len(paths) - 64
+    elif kind in ('imageView', 'ImageView'):
+        activity.update(kind='image', target=target(item.get('path')))
+    elif kind in ('agentMessage', 'assistantMessage'):
+        activity['kind'] = 'replying' if item.get('phase') == 'final_answer' else 'thinking'
+    if actions:
+        activity['actions'] = actions
+        activity['summary'] = summary or actions[-1]
+        # Retain the first descriptor for older page scripts during a refresh.
+        activity.update(actions[0])
+    return activity
+
+
 def normalize_state(state, connected=True, *, image_cache=None, item_limit=None):
     turns = ordered_turns(state)
     # Select bodies before normalization (tool results can contain megabytes).
@@ -346,6 +461,7 @@ def normalize_state(state, connected=True, *, image_cache=None, item_limit=None)
     return {"id": state.get("id", state.get("sessionId")), "title": state.get("title") or "未命名聊天",
             "cwd": state.get("cwd"), "model": state.get("latestModel"), "provider": state.get("modelProvider"), "effort": state.get("latestReasoningEffort") or (state.get("latestThreadSettings") or {}).get("effort"),
             "connected": connected, "status": state.get("threadRuntimeStatus", {}).get("type", "idle"),
+            "currentActivity": current_activity(turns, connected and state.get('threadRuntimeStatus', {}).get('type') == 'active'),
             "permissionMode": permission_mode(state),
             "contextUsage": context_usage(state),
             "collaborationMode": (state.get("latestCollaborationMode") or {}).get("mode"),

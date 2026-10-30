@@ -1,11 +1,14 @@
 .timeline-row.activity{margin:0 0 12px}
-.process-group{margin:12px 0 20px;border:1px solid var(--line);border-radius:12px;min-width:0}
-.process-group>summary{cursor:pointer;padding:12px 14px;min-height:44px;font-size:12px;line-height:20px;color:var(--muted);overflow-wrap:anywhere}
-.process-group-body{padding:0 14px 12px;min-width:0}
+.process-group{margin:4px 0 12px;min-width:0}
+.process-group>summary{cursor:pointer;padding:6px 0;min-height:32px;font-size:12px;line-height:20px;color:var(--muted);overflow-wrap:anywhere}
+.process-group-issues{color:var(--warning-text)}
+.process-group-body{padding:0 0 0 12px;border-left:1px solid var(--line);min-width:0}
 .process-group-body>.timeline-row:last-child{margin-bottom:0}
 .process-group-body>.message{font-size:var(--message-size);margin:12px 0}
 .execution-failure{border:1px solid var(--warning-line);background:var(--warning-bg);border-radius:12px;padding:12px;color:var(--warning-text)}
 .execution-failure>summary{font-weight:600}
+.process-group-body>.execution-failure{border:0;background:transparent;border-radius:0;padding:0;color:var(--muted)}
+.process-group-body>.execution-failure>summary{color:var(--warning-text);font-weight:400}
 .message-body,.appearance-reading-preview,#message{font-family:var(--reading-font,inherit);line-height:var(--reading-leading,var(--message-leading))}
 .message-body :is(pre,code),.activity-body,.appearance-reading-preview pre{font-family:var(--reading-code-font,ui-monospace,monospace)}
 .appearance-reading-preview{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:14px;font-size:var(--message-size)}
@@ -18,10 +21,20 @@
 .timeline{padding:20px max(24px,calc((100% - 760px)/2))}
 .message{font-size:var(--message-size);line-height:var(--message-leading);margin:var(--message-gap) 0}
 .timeline-row{margin-bottom:var(--message-gap)}
-.message.user{background:var(--user);padding:12px 16px;border-radius:20px;margin-left:min(15%,70px)}
+.message.user{background:var(--user);padding:8px 14px;border-radius:16px;margin-left:min(15%,70px);margin-block:calc(var(--message-gap)/2)}
 .message.user .who{display:none}
+.message.user .message-actions{margin-top:2px;gap:0 4px;white-space:normal}
+.message.user .message-actions button{min-height:28px;padding:4px 6px;line-height:20px}
 .message .who{font-size:10px;letter-spacing:1.1px;margin-bottom:10px;color:var(--muted)}
 .message.assistant{padding:0}
+.message.progress-message{margin:16px 0}
+.message.progress-message>.who{display:none}
+.working{display:flex;align-items:flex-start;gap:8px;min-width:0;line-height:20px}
+.working>i{flex:none;margin:7px 0 0}
+.working>[data-activity-label]{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.working>[data-activity-elapsed]{flex:none;margin-left:auto;white-space:nowrap;font-size:11px}
+.working[data-activity-kind=search]>i{position:relative;width:10px;height:10px;margin-top:4px;background:none;border:1.5px solid currentColor;animation:none}
+.working[data-activity-kind=search]>i:after{content:'';position:absolute;width:5px;height:1.5px;right:-4px;bottom:-2px;background:currentColor;transform:rotate(45deg)}
 .message pre,.activity pre{background:var(--code);border-color:var(--line);font-size:var(--code-size)}
 .markdown-body code{background:var(--code)}
 .markdown-body pre code{background:none}

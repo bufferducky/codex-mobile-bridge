@@ -5,13 +5,13 @@ vm.runInContext(fs.readFileSync('web/features/chat/timeline.js','utf8'),ctx);
 const group=vm.runInContext('timelineProcessGroups',ctx),failure=vm.runInContext('timelineFailure',ctx);
 const tool=(key,extra={})=>({key,turnId:'turn-1',kind:'commandExecution',role:'activity',...extra});
 const keys=plan=>plan.flatMap(item=>item.row?[item.row.key]:item.rows.map(row=>row.key));
-test('a native turn folds tools and progress commentary while preserving final output',()=>{
+test('progress commentary stays between its tool groups and final output',()=>{
  const rows=[{key:'user',turnId:'turn-1',role:'user'},tool('read'),{key:'progress',turnId:'turn-1',role:'assistant',phase:'commentary'},tool('test'),{key:'answer',turnId:'turn-1',role:'assistant',phase:'final_answer'}];
- const plan=group(rows);assert.equal(plan.length,3);assert.deepEqual(Array.from(plan[1].rows,row=>row.key),['read','progress','test']);assert.deepEqual(Array.from(keys(plan)),rows.map(row=>row.key));
+ const plan=group(rows);assert.equal(plan.length,5);assert.equal(plan[2].row.key,'progress');assert.deepEqual(Array.from(plan[1].rows,row=>row.key),['read']);assert.deepEqual(Array.from(plan[3].rows,row=>row.key),['test']);assert.deepEqual(Array.from(keys(plan)),rows.map(row=>row.key));
 });
-test('failures, file changes and tool images remain outside collapsed groups',()=>{
+test('tool failures stay in one disclosure while task errors, file changes and images remain outside',()=>{
  const rows=[tool('ok'),tool('nonzero',{exitCode:2}),tool('failed',{status:'failed'}),tool('error',{role:'error'}),tool('files',{role:'fileChanges',fileSummary:{count:1}}),tool('image',{attachments:[{type:'toolImage'}]}),tool('next')];
- const plan=group(rows);for(const key of ['nonzero','failed','error','files','image'])assert.ok(plan.some(item=>item.row?.key===key),key);
+ const plan=group(rows);assert.deepEqual(Array.from(plan[0].rows,row=>row.key),['ok','nonzero','failed']);for(const key of ['error','files','image'])assert.ok(plan.some(item=>item.row?.key===key),key);
  assert.deepEqual(Array.from(keys(plan)),rows.map(row=>row.key));assert.equal(failure(rows[1]),true);
 });
 test('turns and missing identities never merge into the same process group',()=>{
@@ -26,4 +26,16 @@ test('public answers and user interventions retain their chronological position'
 test('failed commands stay visible even when execution details are disabled',()=>{
  const type=vm.runInContext('ChatTimeline',ctx),ui=Object.create(type.prototype);ui.showProcess=false;ui.showReasoning=false;
  assert.equal(ui.rowVisible(tool('fail',{exitCode:1})),true);assert.equal(ui.rowVisible(tool('ok',{exitCode:0})),false);
+});
+test('public progress remains visible when both reasoning and tool details are disabled',()=>{
+ const type=vm.runInContext('ChatTimeline',ctx),ui=Object.create(type.prototype);ui.showProcess=false;ui.showReasoning=false;
+ assert.equal(ui.rowVisible({role:'assistant',phase:'commentary'}),true);
+ assert.equal(ui.rowVisible(tool('reasoning',{kind:'reasoning'})),false);
+ assert.equal(ui.rowVisible({role:'error'}),true);
+});
+test('command exit codes remain explicit without presenting them as task failures',()=>{
+ const label=vm.runInContext('timelineActivityLabel',ctx);
+ assert.equal(label(tool('search',{title:'执行命令',status:'completed',exitCode:1})),'执行命令 · 退出码 1');
+ assert.equal(label(tool('search',{title:'执行命令',status:'failed',exitCode:2})),'执行命令 · 退出码 2');
+ assert.equal(label(tool('tool',{title:'工具',status:'failed'})),'工具 · 执行失败');
 });

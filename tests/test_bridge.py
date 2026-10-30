@@ -306,6 +306,56 @@ class IntegrationTests(unittest.TestCase):
         self.assertFalse(any(request['method'] == 'thread-follower-start-turn'
                              for request in self.fixture.requests))
 
+    def test_secondary_activity_patch_wakes_a_waiting_phone_request(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from urllib.parse import urlencode
+        self.fixture.state['threadRuntimeStatus'] = {'type': 'active'}
+        self.fixture.state['turns'] = [{'turnId': 'turn', 'status': 'inProgress', 'items': [
+            {'id': 'compound', 'type': 'commandExecution', 'status': 'completed', 'command': 'fixture command',
+             'commandActions': [{'type': 'read', 'name': 'A.java', 'path': '/repo/A.java'},
+                                {'type': 'search', 'path': 'supply/src', 'query': 'editable'}]}]}]
+        session = self.bridge.session(THREAD)
+        page = self.bridge.timeline_read(THREAD)
+        config = {'auth': {'mode': 'password', 'username': 'fixture', **password_record('fixture-password')}, 'origins': []}
+        server = GatewayServer(('127.0.0.1', 0), self.bridge, config, ROOT / 'web')
+        server.hosts.add('127.0.0.1:' + str(server.server_port))
+        server.origins.add('http://127.0.0.1:' + str(server.server_port))
+        worker = threading.Thread(target=server.serve_forever, daemon=True); worker.start()
+        token, _ = server.auth.new_session('127.0.0.1')
+        query = urlencode({'after': page['sequence'], 'epoch': page['epoch'], 'start': page['before']})
+
+        def read():
+            conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
+            try:
+                conn.request('GET', '/api/sessions/' + THREAD + '/changes?' + query,
+                             headers={'Cookie': server.auth.cookie_name + '=' + token})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                return json.loads(response.read())
+            finally:
+                conn.close()
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending = executor.submit(read)
+                deadline = time.monotonic() + 2
+                while session.viewers == 0 and time.monotonic() < deadline:
+                    if pending.done():
+                        pending.result()
+                        break
+                    time.sleep(.005)
+                self.assertGreater(session.viewers, 0)
+                start = time.monotonic()
+                self.fixture.publish({'type': 'patches', 'baseRevision': 1, 'revision': 2,
+                                      'patches': [{'op': 'replace', 'path': ['turns', 0, 'items', 0, 'commandActions', 1, 'query'],
+                                                   'value': 'review_status'}]})
+                result = pending.result(timeout=2)
+                self.assertLess(time.monotonic() - start, 1, 'Activity must wake the request, not wait for the 12s heartbeat')
+                self.assertEqual(result['meta']['currentActivity']['actions'][1]['query'], 'review_status')
+                self.assertEqual(result['rows'], [])
+        finally:
+            server.shutdown(); server.server_close(); worker.join(timeout=2)
+
     def test_legacy_desktop_threads_visible_but_subagents_excluded(self):
         from bridge.features.sessions.store import SessionStore
         legacy, untagged, child, cli, mobile = (str(uuid.uuid4()) for _ in range(5))
