@@ -1,5 +1,11 @@
 name: Android release build
 on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Existing source tag to rebuild
+        type: string
+        required: true
   workflow_call:
     inputs:
       source_ref:
@@ -27,6 +33,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Prepare pinned Android dependencies
         run: |
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
