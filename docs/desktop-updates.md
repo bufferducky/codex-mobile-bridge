@@ -8,6 +8,8 @@
 
 每次发布：在 `main` 完成测试，同步版本和构建号、补充 `RELEASE_NOTES.md`，推送匹配 `package.json` 的版本标签。`Prepare signed release draft` 自动构建桌面、Android 和未签名 iOS 产物，签名更新清单并验证完整资产后生成草稿。下载草稿附件再次运行 `node scripts/release-assets.cjs verify <目录>`，通过后发布草稿并设置 Latest。仅推源码不发布应用。
 
+如果某个平台需要单独重试，完成同一版本标签的构建后，可运行 **Assemble and verify release**，填写原桌面构建 run ID、成功的 Android run ID 和版本标签。它核验桌面产物对应标签且六个桌面/iOS任务全部成功，在 runner 上汇总、签名、上传草稿并重新下载验证；只有显式选中 publish 才在全部验证通过后发布。这样可恢复单个平台失败的发布，无须移动版本标签或重建已经成功的桌面包。
+
 本地 Android 正式包用 `python scripts/build-mobile-android.py`，必须提供原有签名；可设置 `CMB_ANDROID_KEYSTORE` 和 `CMB_ANDROID_KEYSTORE_PASSWORD`，或使用本机 `.local/android-signing/release.p12` 与权限为 0600 的 `release-password.txt`。构建不会自动生成正式密钥。`--dev-app` 继续打独立 Dev 包。
 
 ## 用户操作

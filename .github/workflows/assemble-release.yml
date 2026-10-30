@@ -1,0 +1,103 @@
+name: Assemble and verify release
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Existing version tag
+        type: string
+        required: true
+      desktop_run_id:
+        description: Run containing all five desktop artifacts and mobile-iOS
+        type: string
+        required: true
+      android_run_id:
+        description: Successful Android build run for the same source tag
+        type: string
+        required: true
+      publish:
+        description: Publish only after downloading and verifying the complete draft
+        type: boolean
+        default: false
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: release-assembly-${{ inputs.source_ref }}
+  cancel-in-progress: false
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify source tag and completed desktop builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          DESKTOP_RUN: ${{ inputs.desktop_run_id }}
+          ANDROID_RUN: ${{ inputs.android_run_id }}
+        run: |
+          node - <<'JS'
+          const cp=require('node:child_process');
+          const expected='v'+require('./package.json').version;
+          if(process.env.SOURCE_REF!==expected)throw Error('Source tag/version mismatch');
+          for(const name of ['DESKTOP_RUN','ANDROID_RUN'])if(!/^\d+$/.test(process.env[name]))throw Error('Invalid build run');
+          const repository=process.env.GITHUB_REPOSITORY;
+          const read=endpoint=>JSON.parse(cp.execFileSync('gh',['api',`repos/${repository}/${endpoint}`],{encoding:'utf8'}));
+          const desktop=read(`actions/runs/${process.env.DESKTOP_RUN}`);
+          const sha=cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
+          if(desktop.head_sha!==sha)throw Error('Desktop artifacts do not match source tag');
+          const jobs=read(`actions/runs/${process.env.DESKTOP_RUN}/jobs?per_page=100`).jobs;
+          const built=jobs.filter(job=>/^build \/ (package|linux) \(/.test(job.name)||job.name==='ios / ios');
+          if(built.length!==6||built.some(job=>job.conclusion!=='success'))throw Error('All desktop and iOS build/verification jobs must succeed');
+          const android=read(`actions/runs/${process.env.ANDROID_RUN}`);
+          if(android.conclusion!=='success')throw Error('Android build must succeed');
+          JS
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.desktop_run_id }}
+          pattern: desktop-*
+          merge-multiple: true
+          path: dist/release
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.desktop_run_id }}
+          name: mobile-iOS
+          path: dist/release
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.android_run_id }}
+          name: mobile-Android
+          path: dist/release
+      - name: Sign and verify the complete release
+        env:
+          CMB_UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          node scripts/release-assets.cjs notes RELEASE_NOTES.md .tmp/release-notes.md
+          node scripts/sign-update.cjs dist/release .tmp/release-notes.md
+          node scripts/release-assets.cjs verify dist/release --write-checksums
+      - name: Create release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: gh release create "$SOURCE_REF" dist/release/* --verify-tag --draft --title "$SOURCE_REF" --notes-file .tmp/release-notes.md
+      - name: Download and independently verify uploaded release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          gh release download "$SOURCE_REF" --dir dist/release-redownload
+          node scripts/release-assets.cjs verify dist/release-redownload
+      - name: Publish verified release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: gh release edit "$SOURCE_REF" --draft=false --latest
