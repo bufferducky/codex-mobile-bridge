@@ -1,3 +1,33 @@
+<a id="v217"></a>
+
+## v2.1.7 · 个人发行版与安卓通知跳转修复
+
+这是 **bufferducky/codex-mobile-bridge** 的首个个人发行版。桌面和手机版本为 **2.1.7**，Android/iOS 构建号 **40**。
+
+### 修复与改进
+
+- Android 从 ntfy 等通知打开聊天时复用已有 Activity；同一台已保存电脑使用当前 WebView 切换会话，保留草稿和标签，避免每次重新连接。
+- 修复应用状态读取尚未完成时误报“尚未启用应用”；保留通知目标，发现完成后继续跳转，失败后可重试。
+- 连续点击通知以最新目标为准；主动切换应用或退出登录取消等待中的跳转，启动流程不会覆盖新通知。
+- 包含个人分支已有的安卓雾蓝灰配色、紧凑消息操作和执行过程展示。
+- Mac、Android、iOS 和网关的更新地址指向本仓库；桌面更新使用本个人版独立的 Ed25519 公钥验签。
+- GitHub Actions 从同一版本标签构建桌面、Android 和未签名 iOS 产物，生成校验文件并先创建 Release 草稿。
+
+### 安装与升级
+
+- **Android**：个人正式版包名为 `io.github.bufferducky.codexbridge`，与 `Codex Bridge Dev` 和原项目手机版共存。首次使用需重新添加电脑；后续个人版沿用同一包名和签名覆盖升级并保留数据。不要卸载或清除旧 App 的数据。
+- **Mac**：停止原网关并退出 App 后，用匹配架构的 DMG 覆盖“应用程序”中的 Codex Mobile Bridge。正式桌面的配置和有效绑定保存在独立数据目录；开发网关的数据不会自动迁入正式桌面。
+- 首次从原项目切换到本个人发行版需手动安装；安装后“检查更新”才会读取本仓库及个人版签名。DMG/ZIP 有本地完整性签名，未做 Apple Developer ID 公证。
+- 标准 Android 包的锁屏提醒仍使用已配置的 ntfy 等外部通道；这次修复通知点击后的导航，不改变系统后台通知保障范围。
+
+### English
+
+First personal release of **bufferducky/codex-mobile-bridge**, version **2.1.7**, mobile build **40**. Reuse the existing Android Activity and WebView for notification links, wait for client discovery before routing, and prevent earlier notifications or startup from overriding the latest target. Includes the branch's Android UI customization.
+
+All update checks point to this repository. Desktop update metadata is verified with a separate personal-release key. Install this fork manually once to transition from upstream. Android uses `io.github.bufferducky.codexbridge` and coexists with Dev/upstream; add the computer on first use, then keep the same package/signing identity for future upgrades. Mac DMG installation preserves the existing desktop data directory; development gateway data stays separate. macOS packages are ad-hoc signed, not Apple notarized.
+
+---
+
 <a id="v216"></a>
 
 ## v2.1.6 · 会话整理、文件阅读与接入体验

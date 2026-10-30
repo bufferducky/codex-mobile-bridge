@@ -1,3 +1,7 @@
+# 个人发行版 v2.1.7
+
+下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，与 Dev 共存；版本 2.1.7、构建号 40。首次需要添加电脑，后续保留签名覆盖安装。通知修复和迁移说明见 [更新说明](../RELEASE_NOTES.md#v217)。
+
 # Android 与 iOS App
 
 本分支的 Android 字体、紧凑布局与 Codex 专用界面说明见 [Android 阅读与执行过程](ANDROID_CUSTOMIZATION.md)。
@@ -134,6 +138,8 @@ Android 手机无法查询 GitHub 时，会尝试通过当前已连接并登录�
 4. 点击通知回到相应电脑和聊天。手机设置的十秒测试只检验本机显示，不证明远程推送已经接通。
 
 **标准手机包不保证离开 App、锁屏或被系统终止后的通知送达。** 可在「第三方通知」配置 Bark、ntfy、PushPlus；启用「通知链接优先打开手机 App」后，支持该链接的通道可跳转至已保存的电脑。
+
+Android 点击通知时会复用已有 App；如果已经打开对应电脑，直接在当前页面切换到目标聊天，保留页面内的草稿和标签。切换到另一台已保存电脑或 App 进程已结束时，才重新连接。电脑应用状态仍在读取时会保留通知目标，待发现完成后继续跳转；连续点击多个通知以最后一个为准，主动切换应用或退出登录会取消等待中的跳转。
 
 Android 通知大图标显示来源应用，状态栏遵守单色图标要求；iOS 使用来源名称和图片附件，系统小图标仍属于 Bridge，不能逐条替换成其他应用图标。图片由 App 自带，不从远端下载。
 

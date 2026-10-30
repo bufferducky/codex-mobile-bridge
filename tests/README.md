@@ -52,4 +52,6 @@ npm run test:updater
 
 `mobile/tests/` 中 Java/Swift 用例由相应 `scripts/test-mobile-*`、`scripts/test-ios-*` 驱动，可能编译测试程序；只在本次任务允许且环境具备时执行。Web 资源验证不代替 Android WebView 或 iOS WKWebView 的原生交互验证。
 
+`python3 -B scripts/test-mobile-notification-links.py` 提取 Android 实际通知入口方法，在隔离 Java 夹具中验证当前 WebView 复用、冷启动、电脑/中继隔离和无效链接；不打包或安装 APK。对应网页状态发现和延迟跳转回归在 `tests/client-navigation.test.cjs`。
+
 `scripts/gateway-resources.json` 与源路径测试保证清单一致，但冻结导入、签名、安装和更新必须在获准打包后、目标系统上另外验证。不要根据 macOS 单机测试宣称 Windows/Linux 已实机通过。

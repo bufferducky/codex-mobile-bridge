@@ -190,7 +190,7 @@ async function openHarness(){
 }
 $('harness-open').onclick=openHarness;
 async function enter(authInfo){
-  desktopSessions.onListEnter();const chatLink=location.hash;$('desktop-backend').hidden=false;
+  desktopSessions.onListEnter();const chatLink=location.hash,chatLinkRevision=clientNavigation.chatLinkRevision;$('desktop-backend').hidden=false;
   if(/(?:^|[?&])open=harness(?:&|$)/.test(location.search||'')){history.replaceState(null,'','/');await openHarness();}
   const verified=authInfo?.authenticated?authInfo:await api('/api/auth');
   if(!verified.authenticated)throw Error(t('登录状态暂不可用'));
@@ -207,6 +207,7 @@ async function enter(authInfo){
   if(isCodexClient(clientNavigation.provider))loadList(true).catch(async e=>{await clientsReady.catch(()=>{});if(isCodexClient(clientNavigation.provider))toast(e.message);});
   await clientsReady;
   browserNavigation.paused=false;
+  if(clientNavigation.chatLinkRevision!==chatLinkRevision)return;
   const restored=history.state?.bridgeNavigation===1&&history.state.scope===browserNavigation.scope&&history.state.route;
   if(restored&&restored.provider!=='codex'){browserNavigation.restoring=true;try{await browserNavigation.restore(restored);}finally{browserNavigation.restoring=false;}}
   else await clientNavigation.openChatLink(chatLink,openChat);

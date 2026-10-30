@@ -6,7 +6,7 @@ const fs=require('node:fs'),path=require('node:path');
 const {createHash}=require('node:crypto');
 const {manifest}=require('../desktop/features/updates/updater.cjs');
 const version=require('../package.json').version;
-const publicKey=fs.readFileSync(path.join(__dirname,'../desktop/features/updates/update-public-key.pem'),'utf8');
+const publicKey=fs.readFileSync(path.join(__dirname,'../desktop/features/updates/fork-update-public-key.pem'),'utf8');
 const isAsset=name=>/\.(dmg|zip|exe|deb|AppImage|apk|ipa)$/.test(name)||name==='bridge-update.json';
 const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 function releaseAssetNames(v=version){

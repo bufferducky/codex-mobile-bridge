@@ -94,7 +94,7 @@ async function installUpdate(candidate){
   throw Error('无法启动应用更新进程。');
 }
 function setupUpdater(){
-  updater=new Updater({current:app.getVersion(),key:fs.readFileSync(path.join(__dirname,'features/updates/update-public-key.pem')),
+  updater=new Updater({current:app.getVersion(),key:fs.readFileSync(path.join(__dirname,'features/updates/fork-update-public-key.pem')),
     fetch:cloudflared.electronFetch(net,allowedMirrorUrl),directory:path.join(app.getPath('userData'),'updates'),
     skipFile:path.join(app.getPath('userData'),'skipped-update.json'),supported:app.isPackaged&&require(path.join(root,'package.json')).name==='codex-mobile-bridge-desktop'&&['darwin','win32'].includes(process.platform),install:installUpdate});
   setTimeout(()=>updater.check(),5000).unref();
@@ -249,10 +249,10 @@ function register(){
   });
   ipcMain.handle('bridge:open',async(event,target)=>{
     authorize(event);
-    if(target==='releases')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge/releases');
-    if(target==='project-home')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge');
-    if(target==='project-issues')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge/issues');
-    if(target==='project-pulls')return shell.openExternal('https://github.com/try2love/codex-mobile-bridge/pulls');
+    if(target==='releases')return shell.openExternal('https://github.com/bufferducky/codex-mobile-bridge/releases');
+    if(target==='project-home')return shell.openExternal('https://github.com/bufferducky/codex-mobile-bridge');
+    if(target==='project-issues')return shell.openExternal('https://github.com/bufferducky/codex-mobile-bridge/issues');
+    if(target==='project-pulls')return shell.openExternal('https://github.com/bufferducky/codex-mobile-bridge/pulls');
     if(target==='credentials')return shell.openPath(path.join(dataDir,'首次登录.txt'));
     if(target==='data')return shell.openPath(dataDir);
     if(target==='tailscale-help'||target==='setup-tailscale')return shell.openExternal('https://tailscale.com/docs/how-to/quickstart');

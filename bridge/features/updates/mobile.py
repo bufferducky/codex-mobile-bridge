@@ -14,8 +14,8 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHand
 from bridge.features.auth.tls import client_context
 from bridge.features.workspace.workspace import download_range
 
-REPO = 'https://github.com/try2love/codex-mobile-bridge'
-API = 'https://api.github.com/repos/try2love/codex-mobile-bridge/releases?per_page=100'
+REPO = 'https://github.com/bufferducky/codex-mobile-bridge'
+API = 'https://api.github.com/repos/bufferducky/codex-mobile-bridge/releases?per_page=100'
 MAX_SIZE = 512 * 1024 * 1024
 MAX_METADATA = 4 * 1024 * 1024
 CACHE_SECONDS = 24 * 60 * 60

@@ -195,6 +195,57 @@ test('notification links select the owning provider instead of the last selected
   await nav.openChatLink('#claude-chat~desktop%3Aclaude',codex);assert.deepEqual(opened.pop(),['claude','claude-chat']);
   await nav.openChatLink('#aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee~my%20server%2F%7E',codex);assert.deepEqual(opened.pop(),['codex','aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee','my server/~']);
 });
+test('overlapping startup status reads wait for the same response before routing a notification',async()=>{
+  const {nav}=fixture(),opened=[],notices=[];nav.clients=[];nav.provider=nav.view.provider='codex';
+  nav.notify=value=>notices.push(value);nav.applyClients=data=>{nav.clients=data.clients;};let finish,requests=0;
+  nav.request=()=>{requests++;return new Promise(resolve=>finish=resolve);};
+  const first=nav.refresh();let settled=false;const startup=nav.refresh().then(()=>{settled=true;});
+  await Promise.resolve();const waited=!settled;
+  finish({clients:[{id:'codex',enabled:true}]});await Promise.all([first,startup]);
+  assert.equal(waited,true,'startup must wait for the status request already in flight');
+  await nav.openChatLink('#aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee~local',(...args)=>opened.push(args));
+  assert.equal(requests,1);assert.equal(opened.length,1);assert.deepEqual(notices,[]);
+});
+test('a pending startup snapshot defers the notification until enabled apps are known',async()=>{
+  const {nav}=fixture(),opened=[],notices=[];nav.clients=[];nav.provider=nav.view.provider='codex';nav.statusPending=true;
+  nav.notify=value=>notices.push(value);nav.applyClients=data=>{nav.clients=data.clients;};
+  const hash='#aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee~local';
+  await nav.openChatLink(hash,(...args)=>opened.push(args));assert.deepEqual(notices,[]);assert.equal(opened.length,0);
+  nav.request=async()=>({clients:[{id:'codex',enabled:true}],pending:false});await nav.refresh();
+  assert.equal(opened.length,1,'the original notification must open after discovery finishes');assert.deepEqual(notices,[]);
+});
+test('discovery keeps only the latest notification and survives automatic provider selection',async()=>{
+  const {nav}=fixture(),opened=[];nav.clients=[];nav.provider=nav.view.provider='deepseek';nav.statusPending=true;
+  nav.notify=message=>assert.fail(message);nav.view.open=async id=>opened.push(id);
+  await nav.openChatLink('#old~desktop%3Aclaude',()=>{});
+  await nav.openChatLink('#latest~desktop%3Aclaude',()=>{});
+  nav.request=async()=>({clients:[{id:'claude',enabled:true}],pending:false});await nav.refresh();
+  assert.deepEqual(opened,['latest']);assert.equal(nav.provider,'claude');
+});
+test('switching apps or logging out cancels deferred notification navigation',async()=>{
+  for(const action of ['switch','logout']){
+    const {nav}=fixture();nav.statusPending=true;
+    await nav.openChatLink('#chat~desktop%3Aclaude',()=>assert.fail('stale Codex link'));
+    nav.view.open=async()=>assert.fail('stale notification');
+    if(action==='switch')await nav.choose('deepseek');else{nav.swipeSnapshots=new Map();nav.clear();}
+    nav.request=async()=>({clients:[{id:'claude',enabled:true},{id:'deepseek',enabled:true}],pending:false});await nav.refresh();
+    assert.equal(nav.pendingChatLink,null);
+  }
+});
+test('failed discovery reports the read failure and retains the notification for a successful retry',async()=>{
+  const {nav}=fixture(),opened=[],notices=[];nav.clients=[];nav.provider=nav.view.provider='codex';nav.notify=value=>notices.push(value);
+  nav.applyClients=data=>{nav.clients=data.clients;};nav.request=async()=>{throw Error('status offline');};await nav.refresh();
+  await nav.openChatLink('#aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee~local',(...args)=>opened.push(args));
+  assert.deepEqual(notices,['status offline']);assert.equal(opened.length,0);
+  nav.request=async()=>({clients:[{id:'codex',enabled:true}]});await nav.refresh();assert.equal(opened.length,1);
+});
+test('a later notification supersedes an earlier link still waiting for the same provider',async()=>{
+  const {nav}=fixture(),opened=[];nav.provider=nav.view.provider='codex';let finish;
+  nav.view.choose=function(id){this.provider=id;return new Promise(resolve=>finish=resolve);};nav.view.open=async id=>opened.push(id);
+  const earlier=nav.openChatLink('#earlier~desktop%3Aclaude',()=>{});
+  await nav.openChatLink('#later~desktop%3Aclaude',()=>{});finish();await earlier;
+  assert.deepEqual(opened,['later']);
+});
 test('notification routing rejects malformed targets and never enables a disabled client',async()=>{
   const {nav}=fixture(),notices=[];nav.notify=value=>notices.push(value);nav.view.open=async()=>{throw Error('must not open');};
   for(const hash of ['#pair=secret','#not-a-uuid~local','#id~desktop%3Aother','#%zz~desktop%3Aclaude','#x%0A~desktop%3Aclaude','#'+('x'.repeat(513))+'~desktop%3Adeepseek'])assert.equal(await nav.openChatLink(hash,()=>{throw Error('must not open Codex');}),false);

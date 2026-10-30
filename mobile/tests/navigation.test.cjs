@@ -4,6 +4,23 @@ const root=path.resolve(__dirname,'../..');
 const android=fs.readFileSync(path.join(root,'mobile/android/src/io/github/try2love/codexbridge/MainActivity.java'),'utf8');
 const scripts=[...android.matchAll(/evaluateJavascript\("((?:\\.|[^"\\])*)"/g)].map(match=>JSON.parse('"'+match[1]+'"'));
 const back=scripts.find(value=>value.includes("const dialog=document.querySelector('dialog[open]')"));
+test('notification links reuse the Android task in both package variants',()=>{
+  for(const variant of ['android','android-push']){
+    const manifest=fs.readFileSync(path.join(root,'mobile',variant,'AndroidManifest.xml'),'utf8');
+    assert.match(manifest,/<activity[^>]*android:name="io\.github\.try2love\.codexbridge\.MainActivity"[^>]*android:launchMode="singleTask"/);
+  }
+});
+test('warm notification routing changes only the fragment and can reopen an identical link',()=>{
+  const expression=android.match(/web\.evaluateJavascript\("(\(\(\)=>\{const hash=)"\+JSONObject.quote\(url.substring\(url.indexOf\('#'\)\)\)\+"([^"\n]+)",null\)/);
+  assert.ok(expression,'warm links must route within the active document');
+  const hash='#aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee~remote%20host';
+  const script=expression[1]+JSON.stringify(hash)+expression[2];
+  for(const current of ['',hash]){
+    const events=[],location={hash:current},window={dispatchEvent:event=>events.push(event.type)};
+    vm.runInNewContext(script,{location,window,Event:class{constructor(type){this.type=type;}}});
+    assert.equal(location.hash,hash);assert.deepEqual(events,current===hash?['hashchange']:[]);
+  }
+});
 function fixture({navigation,dialog,chatOpen=false,toolOpen=false}={}){
   const calls=[],window={BridgeWorkbench:{back(){calls.push('legacy-tool');return toolOpen;}}};
   if(navigation)window.BridgeNavigation=navigation(calls);

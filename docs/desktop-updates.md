@@ -1,5 +1,15 @@
 # 桌面版本发布与更新
 
+## 个人仓库发布（v2.1.7 起）
+
+本分支固定发布到 `bufferducky/codex-mobile-bridge`。桌面、网关及手机检查更新使用本仓库；桌面实际信任 `desktop/features/updates/fork-update-public-key.pem`，原项目公钥文件保留为来源记录。首次从上游安装切换需手动安装本个人版，后续验签沿用个人版身份。
+
+仓库 Secrets 为 `UPDATE_SIGNING_KEY`、`ANDROID_KEYSTORE_BASE64` 和 `ANDROID_KEYSTORE_PASSWORD`。私钥和 Android release keystore 的本机备份位于开发机 `.local/release-signing/`、`.local/android-signing/`，不提交或分发；不要在后续发布重新生成身份。Dev 使用独立包名和签名；正式 Android 包名为 `io.github.bufferducky.codexbridge`。
+
+每次发布：在 `main` 完成测试，同步版本和构建号、补充 `RELEASE_NOTES.md`，推送匹配 `package.json` 的版本标签。`Prepare signed release draft` 自动构建桌面、Android 和未签名 iOS 产物，签名更新清单并验证完整资产后生成草稿。下载草稿附件再次运行 `node scripts/release-assets.cjs verify <目录>`，通过后发布草稿并设置 Latest。仅推源码不发布应用。
+
+本地 Android 正式包用 `python scripts/build-mobile-android.py`，必须提供原有签名；可设置 `CMB_ANDROID_KEYSTORE` 和 `CMB_ANDROID_KEYSTORE_PASSWORD`，或使用本机 `.local/android-signing/release.p12` 与权限为 0600 的 `release-password.txt`。构建不会自动生成正式密钥。`--dev-app` 继续打独立 Dev 包。
+
 ## 用户操作
 
 从 v0.2.0-beta.5 起，桌面 App 启动后及每 6 小时检查一次 GitHub Release。
@@ -25,11 +35,11 @@ macOS 更新签名与 Apple Developer ID、公证是不同机制；该功能不�
 向 `main` 合并或推送源码会运行测试 CI，但不会自动构建桌面或手机 App，也不会发布更新。需要打包时，手动运行 **Desktop builds** / **iOS unsigned build**，或在准备发布后按下面的版本标签流程执行。仅合并源码时无需修改版本号或创建 tag。
 
 1. 同步 `package.json` / `package-lock.json`、Android/iOS 版本与递增的构建号，更新 `RELEASE_NOTES.md`。保留已有 Android 签名和移动端应用身份，不能临时生成新密钥替代覆盖升级。
-2. 仓库 Actions Secret `UPDATE_SIGNING_KEY` 必须对应 `desktop/features/updates/update-public-key.pem` 中的 Ed25519 公钥。私钥不提交、不放入构建产物；不要重新生成公钥覆盖现有更新身份。
-3. 运行源码测试及五个原生 Desktop builds 目标：macOS arm64、macOS x64、Windows x64、Ubuntu x64、Ubuntu ARM64。Mac 网关与 Electron 在对应架构 runner 构建；核验安装、架构、签名、启动、更新交接、失败恢复与配置保留；使用升级前签发的可信手机绑定，在安装替换及回滚后重新验证认证。iOS 可复用构建生成未签名 IPA 与源码 ZIP；Android 用原签名在本地生成 APK。
+2. 仓库 Actions Secret `UPDATE_SIGNING_KEY` 必须对应 `desktop/features/updates/fork-update-public-key.pem` 中的 Ed25519 公钥。私钥不提交、不放入构建产物；不要重新生成公钥覆盖现有更新身份。
+3. 运行源码测试及五个原生 Desktop builds 目标：macOS arm64、macOS x64、Windows x64、Ubuntu x64、Ubuntu ARM64。Mac 网关与 Electron 在对应架构 runner 构建；核验安装、架构、签名、启动、更新交接、失败恢复与配置保留；使用升级前签发的可信手机绑定，在安装替换及回滚后重新验证认证。iOS 可复用构建生成未签名 IPA 与源码 ZIP；Android 由独立工作流恢复本仓库的正式签名生成 APK，也可在本地使用同一密钥构建。
 4. 推送匹配版本的 tag，或对已有版本 tag 手动运行 **Prepare signed release draft**。流程验证版本和签名身份，等待五个桌面目标及 iOS 构建，始终先生成草稿，不自动发布正式版。
 5. 收齐 13 个安装/源码包：两种 Mac 的 DMG/ZIP、Windows Setup/ZIP、两种 Ubuntu 的 DEB/AppImage、Android APK、iOS IPA 与源码 ZIP，以及 `bridge-update.json`。运行 `node scripts/release-assets.cjs verify <目录> --write-checksums` 验证并生成 `SHA256SUMS.txt`。校验文件覆盖这 14 个文件；更新签名载荷继续认证 macOS arm64/x64 和 Windows x64 的三个 ZIP。
-6. 上传缺失的 Android 包和最终校验文件，再下载草稿全部资产，运行 `node scripts/release-assets.cjs verify <目录>` 重新核验。完整性、签名与所有计划资产通过后才将草稿发布为正式版；失败时保留草稿排查。发布后检查实际下载地址、Latest 与 App 检查更新结果。
+6. 确认 Android 包和最终校验文件已上传，再下载草稿全部资产，运行 `node scripts/release-assets.cjs verify <目录>` 重新核验。完整性、签名与所有计划资产通过后才将草稿发布为正式版；失败时保留草稿排查。发布后检查实际下载地址、Latest 与 App 检查更新结果。
 
 `bridge-update.json` 是签名信封：`payload` 为 JSON 原始字节的 Base64，`signature` 为其 Ed25519 签名。载荷包含 schema、版本、说明、平台文件名、大小和 SHA-256。App 内公钥验签后才接受文件信息，下载地址固定到本仓库 Release，拒绝降级与平台不匹配。
 

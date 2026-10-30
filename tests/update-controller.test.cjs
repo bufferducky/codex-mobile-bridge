@@ -26,7 +26,7 @@ function controller({ready='valid',readyAt=0,pending=false,spawnError=false,exit
       if(name==='node:crypto')return {randomUUID:()=> 'verified-token'};
       if(name==='node:fs')return {mkdirSync(){},writeFileSync(){},openSync:()=>0,closeSync(){},
         readFileSync(file){
-          if(file===path.join(path.dirname(main),'features/updates/update-public-key.pem'))return fs.readFileSync(file);
+          if(file===path.join(path.dirname(main),'features/updates/fork-update-public-key.pem'))return fs.readFileSync(file);
           if(ready==='missing'||now<readyAt)throw Error('ENOENT');
           return ready==='malformed'?'{':JSON.stringify({token:ready==='valid'?'verified-token':'wrong-token'});
         }};
@@ -51,7 +51,7 @@ for(const platform of ['darwin','win32','linux'])for(const packaged of [true,fal
     assert.equal(updater.status().state,supported?'idle':'unsupported');
     assert.equal(updater.current,'2.0.0-preview.3');
     assert.equal(updater.directory,path.join('/fixture/user','updates'));
-    assert.deepEqual(updater.key,fs.readFileSync(path.join(path.dirname(main),'features/updates/update-public-key.pem')));
+    assert.deepEqual(updater.key,fs.readFileSync(path.join(path.dirname(main),'features/updates/fork-update-public-key.pem')));
     assert.equal(updater.apply,f.context.installUpdate);
     assert.equal(typeof updater.fetch,'function');
     assert.deepEqual(f.timers,[5000]);assert.deepEqual(f.intervals,[6*60*60*1000]);

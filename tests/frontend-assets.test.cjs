@@ -31,5 +31,5 @@ test('desktop local resources exist and are included in the application package'
   }
   const entry=fs.readFileSync(path.join(root,'desktop/main.cjs'),'utf8');
   for(const [,file] of entry.matchAll(/require\(['"](\.[^'"]+)['"]\)/g))assert.ok(fs.statSync(path.resolve(root,'desktop',file)).isFile(),file);
-  assert.ok(fs.statSync(path.join(root,'desktop/features/updates/update-public-key.pem')).isFile());
+  assert.ok(fs.statSync(path.join(root,'desktop/features/updates/fork-update-public-key.pem')).isFile());
 });

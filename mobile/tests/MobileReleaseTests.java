@@ -3,6 +3,8 @@ public class MobileReleaseTests {
  static void check(boolean value){if(!value)throw new AssertionError();}
  public static void main(String[] args){
   String v="2.0.0-preview.2",name=MobileRelease.asset(v),url=new MobileRelease(v,"").download;
+  check(MobileRelease.REPO.equals("https://github.com/bufferducky/codex-mobile-bridge"));
+  check(!MobileRelease.isDownload(url.replace("bufferducky/","try2love/")));
   check(MobileRelease.eligible("2.0.0-preview.1","v"+v,false,true,name,url));
   check(!MobileRelease.eligible("1.4.0","v"+v,false,true,name,url));
   check(!MobileRelease.eligible("1.4.0","v"+v,false,false,name,url));

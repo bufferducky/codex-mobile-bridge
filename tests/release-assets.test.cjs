@@ -60,7 +60,7 @@ test('recomputed checksums cannot conceal a changed desktop ZIP or wrong signing
 });
 test('release workflow prepares a draft and uses the packaged signing identity',()=>{
   const workflow=fs.readFileSync(path.join(__dirname,'../.github/workflows/release.yml'),'utf8');
-  assert.ok(workflow.includes('desktop/features/updates/update-public-key.pem'));
+  assert.ok(workflow.includes('desktop/features/updates/fork-update-public-key.pem'));
   assert.ok(workflow.includes('release-assets.cjs notes'));
   assert.ok(workflow.includes('--draft --title'));
   assert.ok(!workflow.includes('--draft=false'));

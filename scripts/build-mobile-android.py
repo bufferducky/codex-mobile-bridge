@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a local debug APK using project-local JDK/SDK; never installs tools."""
+"""Build a signed personal release or independent Dev APK; never installs tools."""
 import hashlib
 import argparse
 import json
@@ -17,14 +17,17 @@ parser.add_argument('--dev-app', action='store_true', help='Build a separately s
 options = parser.parse_args()
 tools = ROOT/'.tmp/mobile-tools'
 jdks = list((tools/'jdk').glob('*/Contents/Home'))
-if not jdks:
-    raise SystemExit('Place a JDK 17 in .tmp/mobile-tools/jdk first.')
-jdk = jdks[0]
-sdk = tools/'sdk'
-build_tools = next(p for p in (sdk/'build-tools').iterdir() if (p/'aapt2').exists())
-android = next((sdk/'platforms').glob('*/android.jar'))
+jdk = Path(os.environ['CMB_ANDROID_JAVA_HOME']) if os.environ.get('CMB_ANDROID_JAVA_HOME') else jdks[0] if jdks else Path(os.environ.get('JAVA_HOME', ''))
+if not (jdk/'bin/javac').is_file():
+    raise SystemExit('Configure a JDK 17+ using CMB_ANDROID_JAVA_HOME or JAVA_HOME.')
+sdk = Path(os.environ.get('CMB_ANDROID_SDK', str(tools/'sdk')))
+build_tools = sdk/'build-tools/35.0.0'
+if not (build_tools/'aapt2').is_file():
+    build_tools = next(p for p in (sdk/'build-tools').iterdir() if (p/'aapt2').exists())
+android = sdk/'platforms/android-35/android.jar'
 zxing = tools/'zxing-core-3.5.3.jar'
-if hashlib.sha1(zxing.read_bytes()).hexdigest() != (tools/'zxing.sha1').read_text().strip():
+lock = json.loads((ROOT/'scripts/android-tools-lock.json').read_text())['zxing']
+if hashlib.sha256(zxing.read_bytes()).hexdigest() != lock['sha256']:
     raise SystemExit('ZXing checksum mismatch')
 work = ROOT/'.tmp/mobile-preview/android-build'
 work.mkdir(parents=True, exist_ok=True)
@@ -66,17 +69,27 @@ with zipfile.ZipFile(work/'unsigned.apk','a') as archive:
         archive.write(ROOT/'web/client-icons'/f'{provider}.png', 'assets/'+provider+'.png')
     archive.write(ROOT/'mobile/NOTICE.md','assets/NOTICE.md')
     archive.write(ROOT/'mobile/licenses/ZXing-LICENSE.txt','assets/ZXing-LICENSE.txt')
-key = ROOT/'.local/android-signing/dev-debug.p12' if options.dev_app else tools/'preview-debug.p12'
+key = ROOT/'.local/android-signing/dev-debug.p12' if options.dev_app else Path(os.environ.get('CMB_ANDROID_KEYSTORE', str(ROOT/'.local/android-signing/release.p12')))
 key.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-if not key.exists():
+if options.dev_app and not key.exists():
     run(jdk/'bin/keytool','-genkeypair','-keystore',key,'-storepass','android','-keypass','android','-alias','preview','-keyalg','RSA','-keysize','2048','-validity','3650','-dname','CN=Bridge Local Preview')
+if not key.is_file():
+    raise SystemExit('Release signing key is missing. Restore the existing key; never generate a replacement during a build.')
+password = 'android' if options.dev_app else os.environ.get('CMB_ANDROID_KEYSTORE_PASSWORD', '')
+password_file = ROOT/'.local/android-signing/release-password.txt'
+if not password and password_file.is_file():
+    password = password_file.read_text().strip()
+if not password:
+    raise SystemExit('Configure CMB_ANDROID_KEYSTORE_PASSWORD for the existing release key.')
+env['CMB_BUILD_KEYSTORE_PASSWORD'] = password
+alias = 'preview' if options.dev_app else 'release'
 key.chmod(0o600)
 run(build_tools/'zipalign','-f','4',work/'unsigned.apk',work/'aligned.apk')
 out = options.output_dir.resolve()
 out.mkdir(parents=True,exist_ok=True)
 version = json.loads((ROOT/'package.json').read_text())['version']
 apk = out/('Codex-Mobile-Bridge-'+version+('-Dev' if options.dev_app else '')+'-Android.apk')
-run(build_tools/'apksigner','sign','--ks',key,'--ks-pass','pass:android','--out',apk,work/'aligned.apk')
+run(build_tools/'apksigner','sign','--ks',key,'--ks-key-alias',alias,'--ks-pass','env:CMB_BUILD_KEYSTORE_PASSWORD','--out',apk,work/'aligned.apk')
 run(build_tools/'apksigner','verify','--verbose',apk)
 print(apk)
 print('SHA-256',hashlib.sha256(apk.read_bytes()).hexdigest())

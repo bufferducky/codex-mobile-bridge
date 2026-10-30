@@ -297,7 +297,20 @@ public final class MainActivity extends Activity {
    final boolean saved=ok;runOnUiThread(()->{savingDownload=false;if(isFinishing()||isDestroyed())return;if(task==downloadTask){if(saved)cancelDownload();else renderDownload();Toast.makeText(this,L(saved?"文件已保存":"保存失败，请重试"),Toast.LENGTH_LONG).show();}else renderDownload();});
   });
  }
- boolean openIntent(Intent intent){try{String base=intent.getStringExtra("origin"),thread=intent.getStringExtra("thread"),host=intent.getStringExtra("host");Uri link=intent.getData();if(link!=null){if(!"codexbridge".equals(link.getScheme())||!"open".equals(link.getHost()))return false;base=link.getQueryParameter("origin");thread=link.getQueryParameter("thread");host=link.getQueryParameter("host");}if(base==null)return false;if(!saved().contains(base)){message(L("请先扫码保存通知对应的电脑，再打开聊天。"));return false;}connect(thread==null||thread.isEmpty()?base+"/":GatewayURL.chat(base,thread,host==null?"local":host));return true;}catch(Exception e){message(L("通知链接无效"));return false;}}
+ boolean openIntent(Intent intent){try{
+  String base=intent.getStringExtra("origin"),thread=intent.getStringExtra("thread"),host=intent.getStringExtra("host");Uri link=intent.getData();
+  if(link!=null){if(!"codexbridge".equals(link.getScheme())||!"open".equals(link.getHost()))return false;base=link.getQueryParameter("origin");thread=link.getQueryParameter("thread");host=link.getQueryParameter("host");}
+  if(base==null)return false;
+  if(!saved().contains(base)){message(L("请先扫码保存通知对应的电脑，再打开聊天。"));return false;}
+  String url=thread==null||thread.isEmpty()?base+"/":GatewayURL.chat(base,thread,host==null?"local":host);
+  // A notification for the active computer is an in-page route, not a new connection.
+  // Match the gateway root as well as its origin so previews and relay peers stay isolated.
+  if(web!=null&&base.equals(origin)&&GatewayURL.sameOrigin(web.getUrl(),base)&&GatewayURL.cookiePath(base).equals(new java.net.URI(web.getUrl()).getRawPath())){
+   if(thread!=null&&!thread.isEmpty())web.evaluateJavascript("(()=>{const hash="+JSONObject.quote(url.substring(url.indexOf('#')))+";if(location.hash===hash)window.dispatchEvent(new Event('hashchange'));else location.hash=hash;})()",null);
+   return true;
+  }
+  connect(url);return true;
+ }catch(Exception e){message(L("通知链接无效"));return false;}}
  @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);openIntent(intent);}
  Dialog panel(String title,LinearLayout content){
   resetExitGesture();

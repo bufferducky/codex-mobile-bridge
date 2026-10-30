@@ -2,6 +2,7 @@ import Foundation
 @main struct MobileReleaseTests {
  static func main() throws {
   func check(_ value: Bool) { precondition(value) }
+  check(MobileRelease.repository == "https://github.com/bufferducky/codex-mobile-bridge")
   func row(_ version: String, draft: Bool = false, prerelease: Bool = true, trusted: Bool = true, asset: Bool = true) -> [String: Any] {
    let name = "Codex-Mobile-Bridge-\(version)-iOS-source.zip"
    return ["tag_name":"v"+version,"draft":draft,"prerelease":prerelease,"assets": asset ? [["name":name,"browser_download_url":trusted ? MobileRelease.repository+"/releases/download/v"+version+"/"+name : "https://evil.example/source.zip"]] : []]

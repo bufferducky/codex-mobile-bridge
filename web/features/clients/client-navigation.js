@@ -197,12 +197,32 @@ class ClientNavigation {
     this.onClientStates?.(this.clients);
   }
   async refresh(){
-    if(this.loading||this.pending.size||this.choosing||document.getElementById('app').hidden)return;
+    if(this.pending.size||this.choosing||document.getElementById('app').hidden)return;
+    if(this.refreshTask)return this.refreshTask;
     this.loading=true;const revision=this.revision;
-    try{const data=await ClientLifecycle.request(signal=>this.request('/api/clients',undefined,signal),{timeout:this.statusTimeout??10000,uncertain:false,message:'客户端状态读取超时，请重试。'});if(revision===this.revision){this.statusPending=data.pending===true;if(data.refreshError)throw Error(data.refreshError);if(!this.statusPending){ClientLifecycle.reconcile(this.operationFailures,this.managementClients(data.clients));this.applyClients(data);}}}
-    catch(error){this.notify(error.message);}finally{this.loading=false;this.paint();}
+    const task=(async()=>{
+      try{
+        const data=await ClientLifecycle.request(signal=>this.request('/api/clients',undefined,signal),{timeout:this.statusTimeout??10000,uncertain:false,message:'客户端状态读取超时，请重试。'});
+        if(revision===this.revision){
+          this.statusPending=data.pending===true;if(data.refreshError)throw Error(data.refreshError);
+          if(!this.statusPending){
+            const link=this.pendingChatLink;
+            ClientLifecycle.reconcile(this.operationFailures,this.managementClients(data.clients));this.applyClients(data);this.statusKnown=true;
+            // Discovery may select a default provider. That is not a user navigation.
+            if(link&&link===this.pendingChatLink&&link.revision===revision)link.revision=this.revision;
+          }
+        }
+      }catch(error){if(revision===this.revision){this.statusKnown=false;this.notify(error.message);}}
+      finally{if(this.refreshTask===task){this.loading=false;this.refreshTask=null;this.paint();}}
+      const link=this.pendingChatLink;
+      if(!this.loading&&!this.statusPending&&this.statusKnown&&link){
+        this.pendingChatLink=null;
+        if(link.revision===this.revision)try{await this.openChatLink(link.hash,link.openCodex);}catch(error){this.notify(error.message);}
+      }
+    })();
+    this.refreshTask=task;return task;
   }
-  clear(){this.revision++;this.clients=[];this.choosing=null;this.pending.clear();this.operationFailures?.clear();this.swipeSnapshots.clear();}
+  clear(){this.revision++;this.clients=[];this.statusKnown=false;this.statusPending=false;this.pendingChatLink=null;this.refreshTask=null;this.loading=false;this.choosing=null;this.pending.clear();this.operationFailures?.clear();this.swipeSnapshots.clear();}
   async scanWsl(button){
     if(this.pending.size||this.choosing||this.hasUncertain())return;
     this.choosing='scan-wsl';const revision=++this.revision;button.disabled=true;this.paint();
@@ -211,7 +231,7 @@ class ClientNavigation {
     finally{if(revision===this.revision){this.choosing=null;this.revision++;button.disabled=false;this.paint();}}
   }
   poll(fast=false){
-    if(document.hidden||document.getElementById('app').hidden||this.hasUncertain()||(fast&&!this.statusPending&&!this.managementClients().some(client=>ClientLifecycle.connection(client).waiting)))return;
+    if(this.loading||document.hidden||document.getElementById('app').hidden||this.hasUncertain()||(fast&&!this.statusPending&&!this.pendingChatLink&&!this.managementClients().some(client=>ClientLifecycle.connection(client).waiting)))return;
     return this.refresh();
   }
   connection(client){return ClientLifecycle.connection({...client,pendingEnable:this.gatewayRunning!==false&&this.pending.has(client.id)&&client.enabled});}
@@ -221,6 +241,7 @@ class ClientNavigation {
   syncViewClients(){this.view.setClientStates?.(this.clients.map(client=>({...client,operationFailure:this.operationFailures?.get(client.id),operationUncertain:this.hasUncertain(),pendingEnable:this.gatewayRunning!==false&&this.pending.has(client.id)&&client.enabled})),id=>this.toggle(id,true),id=>this.initialize(id),()=>this.refresh(),id=>this.reconnect(id));}
   retryOperation(id){const failure=this.operationFailures?.get(id);if(!failure||this.hasUncertain())return;return failure.action==='initialize'?this.initialize(id):this.toggle(id,failure.action==='enable');}
   async choose(id,{activate=true}={}){
+    if(activate)this.pendingChatLink=null;
     this.cancelListSwipe();
     if(androidCodexOnly()&&id&&!isCodexClient(id))return;
     const host=id?.startsWith('wsl:')&&isCodexClient(id)?id:undefined;if(host)id='codex';
@@ -254,10 +275,15 @@ class ClientNavigation {
   }
   async openChatLink(hash,openCodex){
     const target=this.chatTarget(hash);if(!target)return false;
+    const linkRevision=this.chatLinkRevision=(this.chatLinkRevision||0)+1;
+    if(this.loading||this.statusPending||this.statusKnown===false||(!this.statusKnown&&!this.clients.length)){
+      this.pendingChatLink={hash,openCodex,revision:this.revision};return true;
+    }
+    this.pendingChatLink=null;
     const entry=target.provider==='codex'?(target.host.startsWith('wsl:')?target.host:'codex'):target.provider;
     if(!this.managementClients().some(client=>client.id===entry&&client.enabled)){this.notify('尚未启用应用，请打开应用管理。');return true;}
     const ready=this.choose(target.host.startsWith('wsl:')?target.host:target.provider),generation=this.view.generation,revision=this.revision;await ready;
-    if(this.provider!==target.provider||generation!==this.view.generation||revision!==this.revision)return true;
+    if(linkRevision!==this.chatLinkRevision||this.provider!==target.provider||generation!==this.view.generation||revision!==this.revision)return true;
     if(isCodexClient(target.provider))await openCodex(target.id,target.host);else await this.view.open(target.id);
     return true;
   }

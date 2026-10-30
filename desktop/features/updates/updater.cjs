@@ -2,7 +2,7 @@
 // Release metadata is authenticated independently of macOS/Windows code signing.
 const fs=require('node:fs/promises'),path=require('node:path');
 const {createHash,verify}=require('node:crypto');
-const REPO='try2love/codex-mobile-bridge';
+const REPO='bufferducky/codex-mobile-bridge';
 const RELEASES=`https://api.github.com/repos/${REPO}/releases?per_page=100`;
 // The mirror only changes transport. Release selection still requires GitHub's
 // manifest signature, and the ZIP is checked against its signed SHA-256.

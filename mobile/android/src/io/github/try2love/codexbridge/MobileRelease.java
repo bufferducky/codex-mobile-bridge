@@ -5,8 +5,8 @@ import java.util.regex.Pattern;
 
 /** Release selection is independent of the gateway and never changes its login. */
 public final class MobileRelease {
- public static final String REPO="https://github.com/try2love/codex-mobile-bridge";
- public static final String API="https://api.github.com/repos/try2love/codex-mobile-bridge/releases?per_page=100";
+ public static final String REPO="https://github.com/bufferducky/codex-mobile-bridge";
+ public static final String API="https://api.github.com/repos/bufferducky/codex-mobile-bridge/releases?per_page=100";
  public static final long MAX_SIZE=512L*1024*1024;
  private static final Pattern VERSION=Pattern.compile("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(alpha|beta|preview|rc)\\.(0|[1-9][0-9]*))?$");
  public final String version,notes,download;public final long size;public final String sha256;
