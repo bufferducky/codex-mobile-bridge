@@ -424,3 +424,13 @@ test('Claude WSL entries stay under Claude and can be enabled independently of n
 test('Claude WSL management uses the packaged Claude icon',()=>{
  const {nav,document}=fixture();document.createElement=tag=>({tag,setAttribute(){},append(child){this.child=child;}});const icon=nav.icon('wsl-claude:'+'a'.repeat(32));assert.equal(icon.child.src,'/client-icons/claude.png');
 });
+
+
+test('Android Codex-only navigation ignores other providers without changing their enabled state',async()=>{
+  const context=vm.createContext({BridgeHost:{codexOnly:()=>true},window:{}});
+  vm.runInContext(fs.readFileSync('web/features/clients/client-navigation.js','utf8'),context);
+  const type=vm.runInContext('ClientNavigation',context),nav=Object.create(type.prototype);
+  nav.provider='codex';nav.cancelListSwipe=()=>{};nav.view={provider:'codex'};
+  nav.clients=[{id:'codex',enabled:true},{id:'claude',enabled:true}];
+  await nav.choose('claude');assert.equal(nav.provider,'codex');assert.equal(nav.clients[1].enabled,true);
+});

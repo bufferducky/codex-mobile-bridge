@@ -15,7 +15,8 @@ async function connect(url){
 async function main(){
  const browser=process.env.CMB_BROWSER||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';if(!process.env.CMB_FIXTURE_ONLY)assert.ok(fs.existsSync(browser),'Set CMB_BROWSER to a Chromium browser executable');
  const fixture=fs.mkdtempSync(path.join(root,'.tmp/wsl-app-ui-')),debugPort=await port(),wsl='wsl:'+'a'.repeat(32),sid='12345678-1234-4234-9234-123456789012',cliSid='12345678-1234-4234-9234-123456789014',sshSid='12345678-1234-4234-9234-123456789015',sshHost='fixture-ssh';
- const navigationFixture=process.env.CMB_NAVIGATION_FIXTURE==='1';
+ const androidFixture=process.env.CMB_ANDROID_UI_FIXTURE==='1';
+ const navigationFixture=process.env.CMB_NAVIGATION_FIXTURE==='1'||androidFixture;
  const assets=JSON.parse(fs.readFileSync(path.join(root,'web/assets.json'))),requests=[],unexpected=[];let scanned=navigationFixture,enabled=navigationFixture,nativeEnabled=true,cdp;
  for(const match of fs.readFileSync(path.join(root,'bridge/api/assets.py'),'utf8').matchAll(/"(\/vendor\/[^"]+)": \("([^"]+)"/g))assets[match[1]]=match[2];
  const native=()=>({id:'desktop',name:'Codex',kind:'desktop',enabled:nativeEnabled,installed:true,configured:true,selectable:true,connected:nativeEnabled,running:true,canQuitDesktop:true});
@@ -24,9 +25,19 @@ async function main(){
  const models=[{id:'group/auto-gpt-6-1-sol',name:'Magpie 分组模型',efforts:['low','medium','high'],defaultEffort:'high'},{id:'group/id-only',name:'group/id-only',efforts:['medium'],defaultEffort:'medium'},{id:'group/another',name:'另一分组',efforts:['high'],defaultEffort:'high'}];
  const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://fixture'),pathname=url.pathname;let body='';for await(const chunk of req)body+=chunk;body=body?JSON.parse(body):undefined;
+  if(androidFixture){
+   res.setHeader('Cache-Control','no-store');
+   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'");
+  }
   const json=value=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(value));};
+  if(androidFixture&&pathname==='/__android-host.js'){
+   res.setHeader('Content-Type','text/javascript');return res.end(`Object.defineProperty(navigator,'userAgent',{value:navigator.userAgent+' BridgeMobile/0.1-Android'});document.documentElement.classList.add('bridge-mobile');document.addEventListener('DOMContentLoaded',()=>{const app=document.getElementById('app');const sync=()=>document.documentElement.classList.toggle('bridge-authenticated',!app.hidden);new MutationObserver(sync).observe(app,{attributes:true,attributeFilter:['hidden']});sync();});`);
+  }
+  if(androidFixture&&pathname==='/__android-checks.js'){res.setHeader('Content-Type','text/javascript');return res.end(fs.readFileSync(path.join(root,'tests/browser/android-presentation.browser.js')));}
+  if(androidFixture&&pathname==='/__font.ttf'){res.setHeader('Content-Type','font/ttf');return res.end(fs.readFileSync(path.join(root,'web/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf')));}
   if(pathname.startsWith('/api/')){
    requests.push({path:pathname,query:Object.fromEntries(url.searchParams),body});
+   if(androidFixture&&pathname==='/api/file-transfer'&&req.method==='GET')return json({clickDownloadMiB:50});
    if(navigationFixture&&pathname.startsWith('/api/desktop-sessions/')){
     assert.equal(req.method,'GET','Navigation fixtures never accept session writes');
     const [,provider,action]=pathname.match(/^\/api\/desktop-sessions\/(claude|deepseek)\/(.+)$/)||[];
@@ -82,7 +93,16 @@ async function main(){
    if([sid,cliSid,sshSid].some(id=>pathname.startsWith('/api/sessions/'+id+'/'))){
     const detailId=[sid,cliSid,sshSid].find(id=>pathname.startsWith('/api/sessions/'+id+'/')),nativeCli=detailId===cliSid||detailId===sshSid;
     const meta={...(navigationFixture?{draftAccountIdentity:'navigation-fixture-codex'}:{}),id:detailId,host:url.searchParams.get('host')||wsl,hostLabel:'WSL fixture',endpointId:url.searchParams.get('host')===wsl?wsl:'desktop',access:{source:url.searchParams.get('host')===wsl||nativeCli?'cli':'desktop',runtime:url.searchParams.get('host')===wsl?'wsl':nativeCli?'cli':'desktop',canSend:true,canReconnect:true,canChangeModel:true,canSelectSkills:true,canUseModes:true,canUseGoal:true},title:'WSL fixture conversation',cwd:'/fixture',model:models[0].id,provider:'magpie',effort:'high',requests:[],status:'idle',connected:true,historyComplete:true,goalRuntimeAvailable:true,capabilities:{send:true,stop:true,settings:true,workspace:true,attachments:true,permissions:true,skills:true,notifications:true,queue:true,plan:true,goal:true,terminal:true,sideChat:false,messageActions:false}};
-    if(pathname.endsWith('/timeline')||pathname.endsWith('/changes'))return json({sequence:0,epoch:'fixture',rows:[],files:[],hasMore:false,meta});
+    if(pathname.endsWith('/timeline')||pathname.endsWith('/changes')){
+     const rows=androidFixture?[
+      {key:'user',turnId:'sample',role:'user',kind:'userMessage',order:0,version:'v1',text:'保留原来的功能，改善手机阅读和执行过程的呈现。'},
+      {key:'read',turnId:'sample',role:'activity',kind:'commandExecution',status:'completed',exitCode:0,turnStatus:'completed',order:1,version:'v1',text:'cat web/index.html'},
+      {key:'search',turnId:'sample',role:'activity',kind:'commandExecution',status:'completed',exitCode:0,turnStatus:'completed',order:2,version:'v1',text:'rg font web/'},
+      {key:'progress',turnId:'sample',role:'assistant',kind:'agentMessage',phase:'commentary',turnStatus:'completed',order:3,version:'v1',text:'已核对页面结构，保留模型、Skill、模式和审批入口。'},
+      {key:'answer',turnId:'sample',role:'assistant',kind:'agentMessage',turnStatus:'completed',order:4,version:'v1',text:'## 阅读舒适，操作也要顺手\n\n正文和代码支持独立字体，执行过程默认汇总折叠。点击展开可以查看实际命令与工具输出。\n\n这是生产界面加载合成 API 的验证页面，没有连接真实 Codex 会话。'}
+     ]:[];
+     return json({sequence:0,epoch:'fixture',rows,files:[],hasMore:false,meta});
+    }
     if(pathname.endsWith('/reconnect'))return json(meta);
     if(pathname.endsWith('/catalog')){if(url.searchParams.get('kind')==='skills')return json({skills:[],errors:[],total:0});return json({kind:'models',models,currentModel:models[0].id,currentEffort:'high',modelSource:'codex',fastMode:{allowed:false}});}
     if(pathname.endsWith('/notifications'))return json({enabled:false});
@@ -91,7 +111,7 @@ async function main(){
    unexpected.push(req.method+' '+req.url);res.writeHead(404);return res.end(JSON.stringify({error:'Unexpected fixture API'}));
   }
   const files=assets[pathname]||(/^\/client-icons\/(codex|claude|deepseek)\.png$/.test(pathname)?pathname.slice(1):null);
-  if(files){const names=Array.isArray(files)?files:[files];const data=names.map(file=>fs.readFileSync(path.join(root,'web',file)));res.setHeader('Content-Type',pathname.endsWith('.js')?'text/javascript':pathname.endsWith('.css')?'text/css':pathname.endsWith('.png')?'image/png':'text/html; charset=utf-8');return res.end(Buffer.concat(data.map((item,i)=>i&&Array.isArray(files)?Buffer.concat([Buffer.from('\n'),item]):item)));}
+  if(files){const names=Array.isArray(files)?files:[files];const data=names.map(file=>{let data=fs.readFileSync(path.join(root,'web',file));if(androidFixture&&file==='index.html')data=Buffer.from(data.toString().replace('<head>','<head><script src="/__android-host.js"></script>').replace('</body>','<script data-bridge-src="/__android-checks.js" defer></script></body>'));return data;});res.setHeader('Content-Type',pathname.endsWith('.js')?'text/javascript':pathname.endsWith('.css')?'text/css':pathname.endsWith('.png')?'image/png':'text/html; charset=utf-8');return res.end(Buffer.concat(data.map((item,i)=>i&&Array.isArray(files)?Buffer.concat([Buffer.from('\n'),item]):item)));}
   res.writeHead(404);res.end();
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;

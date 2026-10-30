@@ -39,3 +39,11 @@ test('appearance reset returns to defaults without retaining a prior override',(
   const previous=normalize({theme:'dark',accent:'#abcdef',fontSize:20,codeSize:17,density:'relaxed'});
   assert.deepEqual(normalize({...previous,...defaults}),defaults);
 });
+
+
+test('font preferences accept only local preset identifiers and bounded line heights',()=>{
+  for(const fontFamily of ['system','sans','serif','custom'])assert.equal(normalize({fontFamily}).fontFamily,fontFamily);
+  for(const fontFamily of ['url(https://external.invalid/font)','bad',null])assert.equal(normalize({fontFamily}).fontFamily,defaults.fontFamily);
+  for(const lineHeight of [NaN,Infinity,'2',1,3])assert.equal(normalize({lineHeight}).lineHeight,defaults.lineHeight);
+  assert.equal(normalize({lineHeight:2.1,codeFontFamily:'custom'}).lineHeight,2.1);
+});

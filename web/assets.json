@@ -80,7 +80,11 @@
   "/workbench.js": "features/workspace/workbench.js",
   "/source-view.js": "features/workspace/source-view.js",
   "/vendor/prism/source-view.min.js": "vendor/prism/source-view.min.js",
-  "/presentation.js": "features/settings/presentation.js",
+  "/presentation.js": [
+    "features/settings/fonts.js",
+    "features/settings/presentation.js",
+    "hosts/android-presentation.js"
+  ],
   "/i18n.js": "shared/i18n.js",
   "/markdown.js": [
     "shared/mermaid-renderer.js",
@@ -106,7 +110,8 @@
     "layouts/compact/presentation.css",
     "shared/presentation-controls.css",
     "hosts/mobile-footer.css",
-    "hosts/mobile-controls.css"
+    "hosts/mobile-controls.css",
+    "hosts/android-presentation.css"
   ],
   "/host.js": [
     "hosts/environment.js",

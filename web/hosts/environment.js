@@ -11,6 +11,9 @@ const BridgeHost = (() => {
     // Native injection can finish after deferred page scripts have executed.
     return !!globalThis.document?.documentElement?.classList.contains('bridge-mobile');
   }
-  return Object.freeze({kind, isNativeApp, hasNativeLayout});
+  function codexOnly(){return kind()==='android';}
+  return Object.freeze({kind, isNativeApp, hasNativeLayout, codexOnly});
 })();
 if (typeof module === 'object' && module.exports) module.exports = BridgeHost;
+
+if(typeof document!=='undefined')document.documentElement.setAttribute?.('data-bridge-host',BridgeHost.kind());

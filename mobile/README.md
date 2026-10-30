@@ -1,5 +1,7 @@
 # Android 与 iOS App
 
+本分支的 Android 字体、紧凑布局与 Codex 专用界面说明见 [Android 阅读与执行过程](ANDROID_CUSTOMIZATION.md)。
+
 手机扫描网关二维码后连接 Codex、Claude Desktop 和 DeepSeek Harness，电脑继续执行任务。手机 App 保存多台电脑，提供原生扫码、剪贴板、文件下载和通知；浏览器入口同时保留。
 
 **[v2.1.6 发布页](https://github.com/try2love/codex-mobile-bridge/releases/tag/v2.1.6)** · [完整更新说明](../RELEASE_NOTES.md) · [桌面客户端接入](../docs/deepseek-harness.md)

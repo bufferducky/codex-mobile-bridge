@@ -93,7 +93,7 @@ test('spoofable host hints expose no native authorization or privileged bridge',
   assert.equal(host.kind(), 'android');
   assert.equal(host.isNativeApp(), true);
   assert.equal(host.hasNativeLayout(), true);
-  assert.deepEqual(Object.keys(host).sort(), ['hasNativeLayout', 'isNativeApp', 'kind']);
+  assert.deepEqual(Object.keys(host).sort(), ['codexOnly', 'hasNativeLayout', 'isNativeApp', 'kind']);
   assert.equal(Object.isFrozen(host), true);
 });
 
@@ -105,4 +105,8 @@ test('the CommonJS entry parses explicit user agents without a browser environme
   assert.equal(host.kind('BridgeMobile/0.1-iOS'), 'ios');
   assert.equal(host.isNativeApp('BridgeMobile/0.1-Android'), true);
   assert.equal(Object.isFrozen(host), true);
+});
+
+test('Codex-only presentation follows Android host identity, never viewport or injected classes',()=>{
+  for(const ua of ['BridgeMobile/0.1-Android','BridgeMobile/0.1-iOS','Mozilla Android']){const {host,classes}=fixture(ua);classes.add('bridge-mobile');assert.equal(host.codexOnly(),ua==='BridgeMobile/0.1-Android');}
 });

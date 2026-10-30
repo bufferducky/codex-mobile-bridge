@@ -13,6 +13,17 @@ def view(count=320, sequence=1):
 
 
 class TimelineTests(unittest.TestCase):
+    def test_command_exit_code_survives_projection_and_updates(self):
+        source = {'sequence': 1, 'turns': [{'id': 'commands', 'status': 'inProgress', 'messages': [
+            {'id': 'command', 'kind': 'commandExecution', 'role': 'activity', 'status': 'inProgress', 'text': 'test'}]}]}
+        timeline = Timeline(); timeline.update(source); initial = timeline.page()
+        source['sequence'] = 2
+        source['turns'][0]['messages'][0].update(status='completed', exitCode=2)
+        timeline.update(source)
+        changed = timeline.changes(1, initial['epoch'], initial['before'])['rows']
+        self.assertEqual(changed[0]['exitCode'], 2)
+
+
     def test_native_completed_turn_file_summary_survives_history_and_updates(self):
         state = {'turns': [{'turnId': 'patch-turn', 'status': 'inProgress', 'items': [
             {'type': 'fileChange', 'id': 'patch', 'status': 'completed', 'changes': {

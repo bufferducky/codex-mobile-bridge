@@ -2,6 +2,28 @@
 const timelineText=source=>typeof BridgeI18n==='undefined'?source:BridgeI18n.t(source);
 const fileChangeLabel=row=>timelineText('已编辑 {count} 个文件').replace('{count}',row.fileSummary?.count||0);
 const recentTimelinePages=new Map();
+// Keep chronological runs within one native turn. Never bury failures, final
+// answers, file summaries or tool images inside a process disclosure.
+function timelineFailure(row){return row.role==='error'||['failed','error','declined','cancelled'].includes(row.status)||Number.isInteger(row.exitCode)&&row.exitCode!==0;}
+function timelineActivityLabel(row){return (row.title||row.kind)+(timelineFailure(row)?' · '+timelineText('执行失败'):row.status==='inProgress'?timelineText(' · 进行中'):'');}
+function timelineProcessRow(row){
+  if(!row.turnId||row.role==='error'||row.role==='fileChanges'||row.fileSummary)return false;
+  if(timelineFailure(row))return false;
+  if(row.attachments?.some(item=>['toolImage','localImage','image'].includes(item.type)))return false;
+  return row.role==='activity'||row.role==='assistant'&&row.phase==='commentary';
+}
+function timelineProcessGroups(rows){
+  const result=[],runs=new Map();let group=null;
+  for(const row of rows){
+    if(!timelineProcessRow(row)){group=null;result.push({row});continue;}
+    if(!group||group.turnId!==row.turnId){
+      const index=runs.get(row.turnId)||0;runs.set(row.turnId,index+1);
+      group={key:JSON.stringify([row.turnId,index]),turnId:row.turnId,rows:[]};result.push(group);
+    }
+    group.rows.push(row);
+  }
+  return result;
+}
 function timelineFilePath(path,cwd){
   if(typeof path!=='string'||!path||typeof cwd!=='string'||!cwd||/[\0\r\n]/.test(path))throw Error(timelineText('文件路径无法定位'));
   const windows=/^(?:[A-Za-z]:[\\/]|\\\\|\/\/)/.test(cwd);
@@ -33,7 +55,7 @@ class ChatTimeline {
     this.container=elements.container||document.getElementById('messages');
     this.older=elements.older||document.getElementById('older');
     this.newer=elements.newer||document.getElementById('newer');
-    this.abort=new AbortController();this.rows=new Map();this.nodes=new Map();this.details=new Map();
+    this.abort=new AbortController();this.rows=new Map();this.nodes=new Map();this.details=new Map();this.processGroups=new Map();
     this.mermaidScope=window.BridgeMermaidCards?.createScope();
     this.files=new Map();this.sequence=-1;this.epoch='';this.before=null;this.hasMore=false;
     this.busy=false;this.generation=0;this.windowRevision=0;this.following=true;this.lastTop=0;this.retryCount=0;
@@ -66,7 +88,7 @@ class ChatTimeline {
   nearTop(){const nodes=[...this.container.children].filter(n=>!n.hidden);return nodes.length>0&&nodes.slice(0,11).some(n=>n.getBoundingClientRect().bottom>=this.viewport.getBoundingClientRect().top);}
   capture(accept=()=>true){if(!this.viewport.clientHeight)return this.anchor;const top=this.viewport.getBoundingClientRect().top;const nodes=[...this.container.children].filter(n=>!n.hidden&&accept(n));const node=nodes.find(n=>n.getBoundingClientRect().bottom>top)||nodes[nodes.length-1];return node?{key:node.dataset.key,offset:node.getBoundingClientRect().top-top}:null;}
   rowVisible(row){
-    if(row.role==='user'||row.role==='error')return true;
+    if(row.role==='user'||timelineFailure(row))return true;
     if(row.kind==='reasoning')return this.showReasoning;
     if(row.role==='activity'||row.phase==='commentary')return this.showProcess;
     return true;
@@ -76,7 +98,7 @@ class ChatTimeline {
     const imagesChanged=this.showToolImages!==showToolImages;
     this.showToolImages=showToolImages;
     this.showReasoning=showReasoning;this.showProcess=showProcess;
-    const anchor=this.capture(node=>this.rowVisible(this.rows.get(node.dataset.key).row)),bottom=this.following;
+    const anchor=this.capture(node=>{const row=this.rows.get(node.dataset.key)?.row;return row&&this.rowVisible(row);}),bottom=this.following;
     for(const [key,entry] of this.nodes){
       const row=this.rows.get(key).row;
       if(imagesChanged&&row.attachments?.some(item=>item.type==='toolImage')){
@@ -86,14 +108,15 @@ class ChatTimeline {
       }
       entry.node.hidden=!this.rowVisible(row);
     }
-    this.refreshActions();
+    this.layoutRows();this.refreshActions();
     this.restore(anchor,bottom);
   }
   jumpBottom(){this.viewport.scrollTop=this.viewport.scrollHeight;this.following=true;this.newer.hidden=true;}
   restore(anchor,bottom=false){
     if(this.abort.signal.aborted||!this.viewport.clientHeight)return;
     this.suppress=true;
-    const node=anchor&&this.nodes.get(anchor.key)?.node;
+    const rowNode=anchor&&this.nodes.get(anchor.key)?.node;
+    const node=rowNode?.closest('details.process-group')||rowNode;
     if(bottom)this.jumpBottom();
     else if(node&&!node.hidden)this.viewport.scrollTop+=node.getBoundingClientRect().top-this.viewport.getBoundingClientRect().top-anchor.offset;
     this.lastTop=this.viewport.scrollTop;
@@ -165,8 +188,7 @@ class ChatTimeline {
       this.nodes.set(row.key,{node,stamp});
     }
     const ordered=[...this.rows.values()].map(x=>x.row).sort((a,b)=>a.order-b.order);
-    let position=this.container.firstChild;
-    for(const row of ordered){const node=this.nodes.get(row.key).node;if(node===position)position=position.nextSibling;else this.container.insertBefore(node,position);}
+    this.layoutRows(ordered);
     if(reset||history){this.before=page.before;this.hasMore=page.hasMore;this.windowRevision++;}
     this.refreshActions();this.historyStatus();this.restore(anchor,bottom);
     if(!history&&!bottom&&(changed||page.meta.requests?.length)){this.newer.textContent=page.meta.requests?.length?timelineText('有待确认请求 ↓'):timelineText('有新内容 ↓');this.newer.hidden=false;}
@@ -180,14 +202,51 @@ class ChatTimeline {
       while(recentTimelinePages.size>8)recentTimelinePages.delete(recentTimelinePages.keys().next().value);
     }
   }
+  layoutRows(ordered=[...this.rows.values()].map(x=>x.row).sort((a,b)=>a.order-b.order)){
+    const plan=timelineProcessGroups(ordered.filter(row=>this.rowVisible(row))),roots=[],used=new Set();
+    const place=(parent,nodes)=>{
+      let position=parent.firstChild;
+      for(const node of nodes){if(node===position)position=position.nextSibling;else parent.insertBefore(node,position);}
+      const keep=new Set(nodes);for(const node of [...parent.children])if(!keep.has(node))node.remove();
+    };
+    for(const item of plan){
+      if(item.row){roots.push(this.nodes.get(item.row.key).node);continue;}
+      const keys=new Set(item.rows.map(row=>row.key));
+      // A history page can prepend another run in the same turn. Match by row
+      // identity so an expanded group never transfers to that unrelated run.
+      const existing=[...this.processGroups].find(([key,group])=>!used.has(key)&&group.node.dataset.turnId===String(item.turnId)&&[...keys].some(rowKey=>group.keys.has(rowKey)));
+      let [groupKey,group]=existing||[JSON.stringify([item.turnId,item.rows[0].key]),null];
+      if(!group){
+        const node=document.createElement('details'),heading=document.createElement('summary'),body=document.createElement('div');
+        node.className='process-group';body.className='process-group-body';node.append(heading,body);
+        group={node,heading,body,keys};this.processGroups.set(groupKey,group);
+      }
+      group.keys=keys;
+      const count=item.rows.filter(row=>row.role==='activity'&&row.kind!=='reasoning').length;
+      group.node.dataset.key=item.rows[0].key;group.node.dataset.turnId=item.turnId;
+      const label=timelineText(count?'执行过程 · {count} 项工具活动':'思考与执行过程').replace('{count}',count)
+        +(item.rows.some(row=>row.status==='inProgress'||row.turnStatus==='inProgress')?timelineText(' · 进行中'):'');
+      if(group.heading.textContent!==label)group.heading.textContent=label;
+      group.heading.title=timelineText('按当前已加载的记录汇总');
+      place(group.body,item.rows.map(row=>this.nodes.get(row.key).node));roots.push(group.node);used.add(groupKey);
+    }
+    place(this.container,roots);
+    const turns=new Set(ordered.map(row=>String(row.turnId)));
+    for(const [key,group] of this.processGroups)if(!used.has(key)){
+      group.node.remove();
+      // Hiding execution details must not forget a disclosure the user opened.
+      if(!turns.has(group.node.dataset.turnId))this.processGroups.delete(key);
+    }
+  }
   renderRow(row,open){
     const activity=row.role==='activity'||row.role==='fileChanges',toolImages=activity&&row.attachments?.some(item=>item.type==='toolImage');
     const node=document.createElement(activity&&!toolImages?'details':'div');
     node.className=toolImages?'tool-images timeline-row':activity?'activity timeline-row':'message timeline-row '+row.role;
+    if(timelineFailure(row))node.classList.add('execution-failure');
     const content=toolImages?document.createElement('details'):node;
     if(toolImages){content.className='activity';node.append(content);}
     const heading=document.createElement(activity?'summary':'span');heading.className=activity?'':'who';
-    heading.textContent=activity?(row.title||row.kind)+(row.status==='inProgress'?timelineText(' · 进行中'):''):row.role==='user'?timelineText('你'):row.role==='error'?timelineText('执行错误'):['CODEX',row.model&&[row.model,row.effort].filter(Boolean).join(' ')].filter(Boolean).join(' · ');content.append(heading);
+    heading.textContent=activity?timelineActivityLabel(row):row.role==='user'?timelineText('你'):row.role==='error'?timelineText('执行错误'):['CODEX',row.model&&[row.model,row.effort].filter(Boolean).join(' ')].filter(Boolean).join(' · ');content.append(heading);
     if(row.fileSummary){
       node.classList.add('edited-files-card');
       heading.replaceChildren();
@@ -295,6 +354,7 @@ class ChatTimeline {
     }
   }
   relabel(){
+    this.layoutRows();
     this.refreshActions();
     this.container.querySelectorAll('.message-copy').forEach(n=>n.textContent=timelineText('复制'));
     this.container.querySelectorAll('.message-quote').forEach(n=>n.textContent=timelineText('引用'));
@@ -304,7 +364,7 @@ class ChatTimeline {
       const row=this.rows.get(key)?.row;if(!row)continue;
       const node=entry.node,heading=(row.role==='activity'||row.role==='fileChanges')?(node.tagName==='DETAILS'?node.firstElementChild:node.querySelector('details.activity > summary')):node.firstElementChild;
       if(row.fileSummary){const label=node.querySelector('.edited-files-label');if(label)label.textContent=fileChangeLabel(row);const basis=node.querySelector('.edited-files-basis');if(basis)basis.textContent=timelineText('累计修改');}
-      else if(heading)heading.textContent=(row.role==='activity'||row.role==='fileChanges')?(row.title||row.kind)+(row.status==='inProgress'?timelineText(' · 进行中'):''):row.role==='user'?timelineText('你'):row.role==='error'?timelineText('执行错误'):['CODEX',row.model&&[row.model,row.effort].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+      else if(heading)heading.textContent=(row.role==='activity'||row.role==='fileChanges')?timelineActivityLabel(row):row.role==='user'?timelineText('你'):row.role==='error'?timelineText('执行错误'):['CODEX',row.model&&[row.model,row.effort].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
       const more=node.querySelector('.detail-more');
       if(more&&!more.disabled)more.textContent=timelineText(this.details.has(key)?'继续加载正文':'展开完整内容');
       const attachment=node.querySelector('.timeline-attachments small.muted');

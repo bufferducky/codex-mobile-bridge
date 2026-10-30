@@ -1,13 +1,16 @@
 'use strict';
 // Appearance is local to this browser; no desktop or account settings are changed.
 const ChatAppearance=(()=>{
-  const defaults={theme:'system',accent:'#4664ed',fontSize:16,codeSize:13,density:'standard',showReasoning:true,showProcess:true,showToolImages:true,showActivity:true,showComputer:true,showPushplus:true,showAccounts:true,showFileThumbnails:true};
+  const defaults={theme:'system',accent:'#4664ed',fontSize:16,codeSize:13,fontFamily:'system',codeFontFamily:'mono',lineHeight:1.85,density:'standard',showReasoning:true,showProcess:true,showToolImages:true,showActivity:true,showComputer:true,showPushplus:true,showAccounts:true,showFileThumbnails:true};
   function normalize(value={}){
     if(!value||typeof value!=='object')value={};
     return {theme:['system','light','dark'].includes(value.theme)?value.theme:defaults.theme,
       accent:/^#[0-9a-f]{6}$/i.test(value.accent)?value.accent:defaults.accent,
       fontSize:Number.isInteger(value.fontSize)&&value.fontSize>=10&&value.fontSize<=32?value.fontSize:defaults.fontSize,
       codeSize:Number.isInteger(value.codeSize)&&value.codeSize>=8&&value.codeSize<=28?value.codeSize:defaults.codeSize,
+      fontFamily:['system','sans','serif','custom'].includes(value.fontFamily)?value.fontFamily:defaults.fontFamily,
+      codeFontFamily:['mono','custom'].includes(value.codeFontFamily)?value.codeFontFamily:defaults.codeFontFamily,
+      lineHeight:typeof value.lineHeight==='number'&&Number.isFinite(value.lineHeight)&&value.lineHeight>=1.4&&value.lineHeight<=2.2?value.lineHeight:defaults.lineHeight,
       density:['compact','standard','relaxed'].includes(value.density)?value.density:defaults.density,
       showReasoning:typeof value.showReasoning==='boolean'?value.showReasoning:defaults.showReasoning,
       showProcess:typeof value.showProcess==='boolean'?value.showProcess:defaults.showProcess,
@@ -40,7 +43,9 @@ if(typeof document!=='undefined')(()=>{
   const get=id=>document.getElementById(id),root=document.documentElement;
   const key='bridge-appearance',system=window.matchMedia('(prefers-color-scheme: dark)');
   let saved;try{saved=JSON.parse(localStorage.getItem(key));}catch{}
-  let settings=ChatAppearance.normalize(saved),collapsed=false;
+  const defaults={...ChatAppearance.defaults,...(BridgeHost.kind()==='android'?{accent:'#226e54',theme:'light'}:{})};
+  let settings=ChatAppearance.normalize({...defaults,...(saved&&typeof saved==='object'?saved:{})}),collapsed=false;
+  const fontLibrary=new BridgeFontLibrary.Library();
   const composer=get('composer'),body=get('composer-body'),toggle=get('composer-toggle'),message=get('message');
   function preserveReading(change){
     const timeline=typeof chatTimeline==='undefined'?null:chatTimeline;
@@ -70,6 +75,12 @@ if(typeof document!=='undefined')(()=>{
     root.style.setProperty('--soft',settings.accent+(dark?'29':'12'));
     root.style.setProperty('--message-size',settings.fontSize+'px');
     root.style.setProperty('--code-size',settings.codeSize+'px');
+    const families={system:'system-ui, -apple-system, BlinkMacSystemFont, sans-serif',sans:'sans-serif',serif:'serif',custom:'BridgeCustomBody, system-ui, sans-serif'};
+    root.style.setProperty('--reading-font',families[settings.fontFamily]);
+    root.style.setProperty('--reading-code-font',settings.codeFontFamily==='custom'?'BridgeCustomCode, ui-monospace, monospace':'ui-monospace, SFMono-Regular, Consolas, monospace');
+    root.style.setProperty('--reading-leading',settings.lineHeight);
+    get('appearance-font-family').value=settings.fontFamily;get('appearance-code-family').value=settings.codeFontFamily;
+    get('appearance-leading').value=settings.lineHeight;get('appearance-leading-value').textContent=settings.lineHeight.toFixed(2);
     document.querySelector('meta[name="theme-color"]').content=dark?'#17181c':'#ffffff';
     for(const [id,value] of Object.entries({theme:settings.theme,accent:settings.accent,font:settings.fontSize,code:settings.codeSize,density:settings.density}))get('appearance-'+id).value=value;
     get('appearance-font-value').textContent=settings.fontSize+' px';get('appearance-code-value').textContent=settings.codeSize+' px';
@@ -84,7 +95,7 @@ if(typeof document!=='undefined')(()=>{
   }
   function resizeMessage(){
     if(body.hidden)return;
-    preserveReading(()=>{message.style.height='auto';message.style.height=Math.min(160,Math.max(48,message.scrollHeight))+'px';});
+    preserveReading(()=>{message.style.height='auto';message.style.height=Math.min(160,Math.max(BridgeHost.kind()==='android'?44:48,message.scrollHeight))+'px';});
   }
   function setCollapsed(value){
     preserveReading(()=>{
@@ -117,7 +128,27 @@ if(typeof document!=='undefined')(()=>{
   document.querySelectorAll('[data-accent]').forEach(button=>button.onclick=()=>change({accent:button.dataset.accent}));
   get('appearance-pushplus').onchange=()=>change({showPushplus:get('appearance-pushplus').checked});
   get('appearance-accounts').onchange=()=>change({showAccounts:get('appearance-accounts').checked});
-  get('appearance-reset').onclick=()=>change(ChatAppearance.defaults);
+  get('appearance-font-family').onchange=()=>change({fontFamily:get('appearance-font-family').value});
+  get('appearance-code-family').onchange=()=>change({codeFontFamily:get('appearance-code-family').value});
+  get('appearance-leading').oninput=()=>change({lineHeight:Number(get('appearance-leading').value)});
+  const fontControls=slot=>({input:get('appearance-'+slot+'-file'),select:get(slot==='body'?'appearance-font-family':'appearance-code-family'),status:get('appearance-'+slot+'-font-status'),remove:get('appearance-'+slot+'-font-remove'),field:slot==='body'?'fontFamily':'codeFontFamily',fallback:slot==='body'?'system':'mono'});
+  function fontReady(slot,result){const controls=fontControls(slot),option=controls.select.querySelector('[value=custom]');option.disabled=!result;controls.remove.disabled=!result;controls.status.textContent=result?result.name:BridgeI18n.t('未导入自定义字体');}
+  for(const slot of ['body','code']){
+    const controls=fontControls(slot);fontReady(slot,null);
+    fontLibrary.restore(slot).then(result=>{if(result){preserveReading(()=>{fontReady(slot,result);apply();});}}).catch(error=>{controls.status.textContent=BridgeI18n.t('字体加载失败，已使用系统字体')+' · '+BridgeI18n.t(error.message);});
+    controls.input.onchange=async()=>{
+      const file=controls.input.files[0];if(!file)return;controls.input.disabled=true;controls.status.textContent=BridgeI18n.t('正在加载字体…');
+      try{const result=await fontLibrary.import(slot,file);if(result){fontReady(slot,result);change({[controls.field]:'custom'});}}
+      catch(error){controls.status.textContent=BridgeI18n.t(error.message||'字体加载失败，已使用系统字体');}
+      finally{controls.input.disabled=false;controls.input.value='';}
+    };
+    controls.remove.onclick=async()=>{try{await fontLibrary.remove(slot);fontReady(slot,null);change({[controls.field]:controls.fallback});}catch(error){controls.status.textContent=BridgeI18n.t(error.message);}};
+  }
+  get('appearance-reset').onclick=async()=>{
+    change(defaults);
+    const slots=['body','code'],results=await Promise.allSettled(slots.map(slot=>fontLibrary.remove(slot)));
+    results.forEach((result,index)=>{if(result.status==='fulfilled')fontReady(slots[index],null);else fontControls(slots[index]).status.textContent=BridgeI18n.t(result.reason.message);});
+  };
   system.addEventListener('change',()=>{if(settings.theme==='system')preserveReading(apply);});
   window.BridgePresentation={resizeMessage,relabel,openChat:()=>{setCollapsed(false);requestAnimationFrame(resizeMessage);},showError:()=>setCollapsed(false)};
   apply();relabel();resizeMessage();

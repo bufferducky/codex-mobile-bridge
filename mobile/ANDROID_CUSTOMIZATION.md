@@ -1,0 +1,50 @@
+# Android 阅读与执行过程
+
+Android 新配置默认使用浅色背景与绿色强调色，也可选择深色或跟随系统；已有明确保存的颜色会保留，可在“外观与显示”中选择自定义色 `#226e54` 或恢复默认设置。
+
+Android 仅显示 Codex 会话，隐藏底部应用切换和左右滑动切换。此设置不关闭电脑上的 Claude 或 DeepSeek，也不修改它们的登录、任务或网关配置。Codex 的 APP、CLI、SSH 与 WSL 接入仍沿用原路由。
+
+聊天顶部合并为一行，点击标题查看执行位置和项目；工作台按钮打开原有的文件、Git、终端等选择器。输入区默认单行，长内容自动增高；上方工具栏可横向滑动，保留模型、发送方式、工作模式、Skill、权限、上下文与提醒。附件、引用、错误和审批有内容时仍占用各自必要的空间。宽屏工作台和分屏沿用原布局。
+
+## 字体
+
+在“外观与显示 → 字体与阅读”分别设置正文与代码字体、字号及正文行距。支持系统字体预设，以及导入 TTF、OTF、WOFF、WOFF2；没有额外下载或打包中文字体库。
+
+每种字体最多保存一个文件，单个文件不超过 20 MiB。字体先通过格式及浏览器解析检查，再写入当前 WebView/浏览器的 IndexedDB，刷新后恢复。字体不上传到网关。删除字体或恢复默认设置会清除保存的字体；导入失败会保留先前可用的字体。
+
+存储按网关地址的 origin 隔离。同一电脑改用另一个协议、域名或端口访问，需要重新导入；清除 App/WebView 数据也会删除字体。普通浏览器中的此设置不改变 Android 原生电脑列表等系统页面的字体。
+
+## 执行过程
+
+共享时间线按原生 `turnId` 和原始顺序，把同一轮连续的工具活动、思考与进度说明汇总为一个默认折叠区域。摘要统计当前已加载的工具活动，不推测读取了多少文件或模块；加载更早内容后，计数随之更新。公开回答、用户干预或错误会分隔过程区域，避免打乱时间顺序。
+
+工具图片、文件变更汇总、执行失败、待审批和待回答保持独立可见。命令的非零退出码会传到展示层，即使关闭过程显示，也保留失败提示。展开状态在流式更新、翻页和显隐切换时保留；详细输出仍通过原来的按需读取接口获取。
+
+## 验证
+
+```sh
+npm ci --ignore-scripts
+npm run test:desktop
+python3 -B scripts/test-backend.py --source-only -p test_timeline.py
+python3 -B scripts/test-backend.py --source-only -p test_web_assets.py
+python3 -B scripts/test-backend.py --source-only -p test_resource_layout.py
+CMB_FIXTURE_ONLY=1 CMB_ANDROID_UI_FIXTURE=1 node scripts/smoke-wsl-app-ui.cjs
+```
+
+最后一条命令打印一个 loopback 地址。浏览器打开后点击“运行界面检查”，执行生产页面、真实 DOM 与 IndexedDB 的合成验证；不要把此检查用于真实网关。分别检查 390×844、844×390 和 1440×900。
+
+UA 模拟和浏览器检查不等于 Android WebView 实机验证。
+
+## 本机测试 APK
+
+准备好项目 `.tmp/mobile-tools` 中的 JDK、Android SDK 和 ZXing 后，运行：
+
+```sh
+python3 scripts/build-mobile-android.py --dev-app
+```
+
+生成 `dist/mobile-preview/Codex-Mobile-Bridge-2.1.6-Dev-Android.apk`，名称为 Codex Bridge Dev，包名 `io.github.bufferducky.codexbridge.dev`，可与原版共存。Dev 签名保存在 `.local/android-signing/dev-debug.p12`，后续测试版本应继续使用该文件；不要提交或随安装包分发。
+
+共享 Web 页面来自电脑网关。手机安装 Dev APK 后，需要连接运行此分支源码的开发网关，才能看到全部界面改动；连接旧网关仍使用旧页面。配套试用 ZIP 使用独立端口 18789 与独立状态目录，不替换现有桌面 App。
+
+本机构建已通过原生编译、APK 签名、zipalign 和包内容检查，尚未执行 Android 真机安装。

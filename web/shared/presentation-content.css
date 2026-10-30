@@ -1,4 +1,17 @@
 .timeline-row.activity{margin:0 0 12px}
+.process-group{margin:12px 0 20px;border:1px solid var(--line);border-radius:12px;min-width:0}
+.process-group>summary{cursor:pointer;padding:12px 14px;min-height:44px;font-size:12px;line-height:20px;color:var(--muted);overflow-wrap:anywhere}
+.process-group-body{padding:0 14px 12px;min-width:0}
+.process-group-body>.timeline-row:last-child{margin-bottom:0}
+.process-group-body>.message{font-size:var(--message-size);margin:12px 0}
+.execution-failure{border:1px solid var(--warning-line);background:var(--warning-bg);border-radius:12px;padding:12px;color:var(--warning-text)}
+.execution-failure>summary{font-weight:600}
+.message-body,.appearance-reading-preview,#message{font-family:var(--reading-font,inherit);line-height:var(--reading-leading,var(--message-leading))}
+.message-body :is(pre,code),.activity-body,.appearance-reading-preview pre{font-family:var(--reading-code-font,ui-monospace,monospace)}
+.appearance-reading-preview{border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:14px;font-size:var(--message-size)}
+.appearance-reading-preview p{margin:0 0 8px}.appearance-reading-preview pre{margin:0;font-size:var(--code-size);white-space:pre-wrap;background:var(--code);padding:10px;border-radius:8px}
+.font-storage-status{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.font-storage-status button{flex:none;min-height:44px}
 .activity{margin:0}.activity summary{padding:2px 0}
 .notice{background:var(--warning-bg);color:var(--warning-text)}
 .notice .plain{color:inherit}

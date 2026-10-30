@@ -21,6 +21,7 @@ function bindChatListToolbar(toolbar){
   if(typeof ResizeObserver!=='undefined')new ResizeObserver(update).observe(toolbar);
   later();
 }
+function androidCodexOnly(){return typeof BridgeHost!=='undefined'&&BridgeHost.codexOnly?.()===true;}
 function isCodexClient(id){return id==='codex'||typeof id==='string'&&/^wsl:[0-9a-f]{32}$/.test(id);}
 
 class ClientNavigation {
@@ -73,6 +74,7 @@ class ClientNavigation {
   restoreClientSelection(){
     this.provider=localStorage.getItem('bridge-client')||'codex';const requested=new URLSearchParams(location.search).get('client');
     if(['codex','claude','deepseek'].includes(requested)||isCodexClient(requested))this.provider=requested;
+    if(androidCodexOnly()&&!isCodexClient(this.provider))this.provider='codex';
     if(this.provider.startsWith('wsl:')&&isCodexClient(this.provider)){this.initialHost=this.provider;this.provider='codex';localStorage.setItem('bridge-client','codex');}
   }
   paintSettingsActions(){
@@ -96,7 +98,7 @@ class ClientNavigation {
     }
   }
   listTouch(phase,event,list){
-    if(!this.preference('swipe-clients',undefined,true)||document.querySelector('dialog[open]')||this.clients.filter(c=>c.enabled).length<2){this.cancelListSwipe();return;}
+    if(androidCodexOnly()||!this.preference('swipe-clients',undefined,true)||document.querySelector('dialog[open]')||this.clients.filter(c=>c.enabled).length<2){this.cancelListSwipe();return;}
     if(phase==='start'){
       const settling=this.swipePreview;
       if(settling?.commitTarget&&settling.provider===this.provider&&this.clients.some(client=>client.id===settling.commitTarget&&client.enabled))this.choose(settling.commitTarget).catch(error=>this.notify(error.message));
@@ -188,7 +190,7 @@ class ClientNavigation {
     this.windowsSession=data.windowsSession??this.windowsSession;
     this.syncViewClients();
     if(data.computer){this.computer.dataset.deviceName=data.computer;this.computerName.textContent=data.computer;document.dispatchEvent(new Event('bridge-computer'));}
-    const enabled=this.clients.filter(c=>c.enabled);
+    const enabled=this.clients.filter(c=>c.enabled&&(!androidCodexOnly()||isCodexClient(c.id)));
     const id=enabled.some(c=>c.id===this.provider)?this.provider:enabled[0]?.id||null;
     if(id!==this.provider||this.view.provider!==(isCodexClient(id)?'codex':id||'codex'))this.choose(id,{activate:false}).catch(error=>this.notify(error.message));
     else{if(id&&this.view.previewOnly)this.view.confirmCachedList();this.paint();}
@@ -220,6 +222,7 @@ class ClientNavigation {
   retryOperation(id){const failure=this.operationFailures?.get(id);if(!failure||this.hasUncertain())return;return failure.action==='initialize'?this.initialize(id):this.toggle(id,failure.action==='enable');}
   async choose(id,{activate=true}={}){
     this.cancelListSwipe();
+    if(androidCodexOnly()&&id&&!isCodexClient(id))return;
     const host=id?.startsWith('wsl:')&&isCodexClient(id)?id:undefined;if(host)id='codex';
     if(id===this.provider&&this.view.provider===(isCodexClient(id)?'codex':id||'codex')){
       if(host){++this.revision;await this.onApplicationChange?.(id,id,{activate,host});}
@@ -295,7 +298,7 @@ class ClientNavigation {
     const target=provider&&!isCodexClient(provider)?this.view.list:this.sidebar;if(this.heading.parentElement!==target)target.prepend(this.heading);if(this.navigation.parentElement!==target)target.append(this.navigation);
     this.account.classList.toggle('navigation-hidden',!provider||(isCodexClient(provider)&&!!window.BridgeSharedRelay));this.notifications.classList.toggle('navigation-hidden',!provider);this.manage.hidden=!this.preference('clients');
     this.account.textContent=BridgeI18n.t('账号管理');this.account.removeAttribute('data-i18n');this.notifications.textContent=BridgeI18n.language()==='en'?'Push alerts':'第三方通知';this.notifications.removeAttribute('data-i18n');this.notifications.setAttribute('aria-label',BridgeI18n.t('第三方通知'));this.home.textContent=BridgeI18n.language()==='en'?'Computers':'返回电脑列表';
-    this.switcher.replaceChildren();const enabled=this.clients.filter(c=>c.enabled),visible=this.visibleClients();const collapsed=this.preference('switch-collapsed',undefined,false);this.switchToggle.hidden=enabled.length<2||!visible.length;this.paintSettingsActions();this.switchDock.hidden=this.switchToggle.hidden||collapsed;this.navigation.classList.toggle('switch-dock-hidden',this.switchDock.hidden);this.switchToggle.textContent=BridgeI18n.t(collapsed?'显示底部 APP 图标':'隐藏底部 APP 图标');this.switchToggle.setAttribute('aria-expanded',String(!collapsed));this.switchToggle.setAttribute('aria-label',BridgeI18n.t(collapsed?'展开应用图标':'收起应用图标'));this.switchToggle.title=this.switchToggle.getAttribute('aria-label');this.settingsNotifications.textContent=BridgeI18n.language()==='en'?'Push alerts':'第三方通知';
+    this.switcher.replaceChildren();const enabled=this.clients.filter(c=>c.enabled),visible=this.visibleClients();const collapsed=this.preference('switch-collapsed',undefined,false);this.switchPreferences.hidden=androidCodexOnly();this.switchToggle.hidden=androidCodexOnly()||enabled.length<2||!visible.length;this.paintSettingsActions();this.switchDock.hidden=this.switchToggle.hidden||collapsed;this.navigation.classList.toggle('switch-dock-hidden',this.switchDock.hidden);this.switchToggle.textContent=BridgeI18n.t(collapsed?'显示底部 APP 图标':'隐藏底部 APP 图标');this.switchToggle.setAttribute('aria-expanded',String(!collapsed));this.switchToggle.setAttribute('aria-label',BridgeI18n.t(collapsed?'展开应用图标':'收起应用图标'));this.switchToggle.title=this.switchToggle.getAttribute('aria-label');this.settingsNotifications.textContent=BridgeI18n.language()==='en'?'Push alerts':'第三方通知';
     for(const client of visible){const button=document.createElement('button');button.type='button';button.append(this.icon(client.id),document.createTextNode(client.name));button.classList.toggle('selected',client.id===provider);button.setAttribute('aria-pressed',String(client.id===provider));button.onclick=()=>this.choose(client.id).catch(e=>this.notify(e.message));this.switcher.append(button);}
     document.getElementById('desktop-backend').hidden=true;
     document.getElementById('new-chat').disabled=!provider||this.view.previewOnly===true;document.getElementById('new-chat').hidden=false;
