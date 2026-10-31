@@ -5,6 +5,65 @@
   markdown.use(texmath, {engine:window.katex, delimiters:['brackets','dollars']});
   window.BridgeOutputDirectives?.install(markdown);
   const tags = new Set(['p','h1','h2','h3','h4','h5','h6','ul','ol','li','strong','em','s','blockquote','hr','br','table','thead','tbody','tr','th','td']);
+  const languages = {
+    java:'Java', sql:'SQL', javascript:'JavaScript', typescript:'TypeScript', jsx:'JSX', tsx:'TSX',
+    python:'Python', json:'JSON', yaml:'YAML', toml:'TOML', markup:'HTML / XML', css:'CSS',
+    bash:'Bash', powershell:'PowerShell', batch:'Batch', kotlin:'Kotlin', c:'C', cpp:'C++',
+    csharp:'C#', go:'Go', rust:'Rust', swift:'Swift', ruby:'Ruby', php:'PHP', docker:'Dockerfile',
+    diff:'Diff', ini:'INI', graphql:'GraphQL'
+  };
+  const aliases = {
+    js:'javascript', ts:'typescript', py:'python', jsonc:'json', yml:'yaml', html:'markup', xml:'markup', svg:'markup',
+    sh:'bash', shell:'bash', shellscript:'bash', zsh:'bash', ps1:'powershell', bat:'batch', cmd:'batch',
+    kt:'kotlin', 'c++':'cpp', 'c#':'csharp', cs:'csharp', golang:'go', rs:'rust', rb:'ruby',
+    dockerfile:'docker', patch:'diff', mysql:'sql', postgresql:'sql', postgres:'sql', sqlite:'sql', plsql:'sql'
+  };
+  const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+  const codeLanguage = info => {
+    const name = markdown.utils.unescapeAll(info || '').trim().split(/\s+/)[0].toLowerCase();
+    const language = own(aliases, name) ? aliases[name] : name;
+    if (own(languages, language)) return {language, label:languages[language]};
+    const plain = !name || /^(?:text|txt|plaintext|plain|none)$/.test(name);
+    return {language:null, label:plain || !/^[\w+#.-]{1,40}$/.test(name) ? null : name};
+  };
+  // Cache unchanged blocks during streaming; keep both work and retained source bounded.
+  const codeCache = new Map();
+  let cachedCharacters = 0;
+  function highlightCode(code, text, language) {
+    if (!language || text.length > 65536 || text.split('\n').length > 4000) return;
+    const render = () => {
+      const prism = window.Prism, grammar = prism?.languages[language];
+      if (!grammar) return;
+      try {
+        const key = language + '\0' + text;
+        let cached = codeCache.get(key);
+        if (!cached) {
+          cached = {tokens:prism.tokenize(text, grammar), characters:text.length};
+          codeCache.set(key, cached); cachedCharacters += text.length;
+          while (codeCache.size > 32 || cachedCharacters > 262144) {
+            const [oldest, entry] = codeCache.entries().next().value;
+            codeCache.delete(oldest); cachedCharacters -= entry.characters;
+          }
+        }
+        const fragment = document.createDocumentFragment();
+        const append = (parent, values) => {
+          for (const token of Array.isArray(values) ? values : [values]) {
+            if (typeof token === 'string') parent.append(document.createTextNode(token));
+            else {
+              const span = document.createElement('span');
+              span.className = ['token', token.type, ...[].concat(token.alias || [])].join(' ');
+              append(span, token.content); parent.append(span);
+            }
+          }
+        };
+        append(fragment, cached.tokens); code.replaceChildren(fragment);
+      } catch (_) { /* Keep the original readable code if tokenization fails. */ }
+    };
+    if (window.Prism) render();
+    else window.BridgeFeatures?.load('syntax').then(() => {
+      if (code.isConnected) render();
+    }).catch(() => { /* The next message render can retry the optional resource. */ });
+  }
 
   // Build nodes from parsed tokens; model output never becomes executable HTML.
   window.renderMarkdown = function(node, text, files = [], fileUrl = () => '', options = {}) {
@@ -37,7 +96,7 @@
       if (title) anchor.title = title;
       return anchor;
     }
-    let codeIndex=0;
+    let codeIndex=0, highlightBudget=131072;
     const lines=String(text || '').split(/\r?\n/);
     function completeFence(token) {
       if (!token.map || !token.markup) return false;
@@ -118,9 +177,18 @@
             const pre = document.createElement('pre');
             pre.append(code);
             const wrapper=document.createElement('div');wrapper.className='code-block';
+            const {language,label}=codeLanguage(token.info);
+            const header=document.createElement('div');header.className='code-header';
+            const badge=document.createElement('span');badge.className='code-language';
+            badge.textContent=label || (typeof BridgeI18n==='undefined'?'纯文本':BridgeI18n.t('纯文本'));
+            if(!label)badge.dataset.i18n='纯文本';
+            if(language){
+              code.className='language-'+language;
+              if(token.content.length<=highlightBudget){highlightBudget-=token.content.length;highlightCode(code,token.content,language);}
+            }
             const button=document.createElement('button');button.className='plain code-copy';button.type='button';button.textContent=typeof BridgeI18n==='undefined'?'复制代码':BridgeI18n.t('复制代码');
             button.onclick=()=>window.BridgeClipboard?.copy(getSource,button);
-            wrapper.append(button,pre);parent.append(wrapper);
+            header.append(badge,button);wrapper.append(header,pre);parent.append(wrapper);
           }
         } else if (token.type === 'image') {
           const destination = target(token.attrGet('src') || '');

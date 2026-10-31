@@ -5,6 +5,18 @@ vm.runInContext(fs.readFileSync('web/features/chat/timeline.js','utf8'),ctx);
 const group=vm.runInContext('timelineProcessGroups',ctx),failure=vm.runInContext('timelineFailure',ctx);
 const tool=(key,extra={})=>({key,turnId:'turn-1',kind:'commandExecution',role:'activity',...extra});
 const keys=plan=>plan.flatMap(item=>item.row?[item.row.key]:item.rows.map(row=>row.key));
+test('native reconnect notices are informational while terminal and detailed errors remain failures',()=>{
+ const reconnect=vm.runInContext('timelineReconnectText',ctx);
+ for(const text of ['Reconnecting... 1/5','Reconnecting… 2/5','Reconnecting...','重新连接中… 1/5','正在重连… 3/5']){
+  const row={role:'error',text};assert.ok(reconnect(row),text);assert.equal(failure(row),false,text);
+ }
+ for(const text of ['Reconnecting failed after 5 attempts','Reconnecting... 1/5\nAuthentication failed','连接中断，请重新连接。','Reconnecting... 6/5','Reconnecting... 1/0','Failed: Reconnecting... 1/5']){
+  const row={role:'error',text};assert.equal(reconnect(row),null,text);assert.equal(failure(row),true,text);
+ }
+ assert.equal(reconnect({role:'assistant',text:'Reconnecting... 1/5'}),null);
+ assert.equal(reconnect({role:'error',text:'Reconnecting... 1/5',truncated:true}),null);
+ assert.equal(reconnect({role:'error',text:'Reconnecting... 1/5',attachments:[{type:'image'}]}),null);
+});
 test('progress commentary stays between its tool groups and final output',()=>{
  const rows=[{key:'user',turnId:'turn-1',role:'user'},tool('read'),{key:'progress',turnId:'turn-1',role:'assistant',phase:'commentary'},tool('test'),{key:'answer',turnId:'turn-1',role:'assistant',phase:'final_answer'}];
  const plan=group(rows);assert.equal(plan.length,5);assert.equal(plan[2].row.key,'progress');assert.deepEqual(Array.from(plan[1].rows,row=>row.key),['read']);assert.deepEqual(Array.from(plan[3].rows,row=>row.key),['test']);assert.deepEqual(Array.from(keys(plan)),rows.map(row=>row.key));

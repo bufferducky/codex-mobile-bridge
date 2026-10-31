@@ -14,6 +14,7 @@ async function runProgressTimelineChecks({keepOpen=false}={}){
     tool('read',2),tool('failed',3,{exitCode:1}),tool('search',4),
     progress('finding',5,'已找到主要原因：进度说明被折叠了，工具异常又拆出了多张卡片。'),
     tool('check',6),
+    {key:'reconnect',order:7,turnId:'round',role:'error',text:'Reconnecting... 1/5',version:'v1'},
     {key:'answer',order:8,turnId:'round',role:'assistant',phase:'final_answer',text:'进度说明会直接显示，工具记录收进轻量的执行详情。',version:'v1'},
   ];
   const page=(items,sequence=1)=>({rows:items,sequence,epoch:'progress-fixture',files:[],meta:{status:'active',requests:[{id:'approval-fixture'}]},hasMore:false});
@@ -24,7 +25,13 @@ async function runProgressTimelineChecks({keepOpen=false}={}){
     timeline.setVisibility({showProcess:true,showReasoning:true});timeline.apply(page(rows),true);
     await frame();await frame();
     check(timeline.nodes.get('intro').node.parentElement===messages&&timeline.nodes.get('finding').node.parentElement===messages,'Public progress stays outside tool disclosures');
-    check([...messages.children].map(n=>n.dataset.key).join(',')==='user,intro,read,finding,check,answer','Progress, tools and final answer retain their chronological order');
+    check([...messages.children].map(n=>n.dataset.key).join(',')==='user,intro,read,finding,check,reconnect,answer','Progress, tools and final answer retain their chronological order');
+    const reconnect=timeline.nodes.get('reconnect').node,style=getComputedStyle(reconnect);
+    check(reconnect.classList.contains('reconnect-status')&&!reconnect.classList.contains('execution-failure')&&!reconnect.querySelector('.who,.message-body'),'Automatic reconnection is a single status line without an error heading');
+    check(reconnect.textContent===timelineText('重新连接中')+'… 1/5'&&reconnect.getBoundingClientRect().height<=24&&parseFloat(style.marginTop)<=4&&parseFloat(style.marginBottom)<=4,'Reconnect notice retains its attempt count with compact spacing');
+    check(style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.borderTopWidth==='0px'&&style.color===getComputedStyle(document.documentElement).getPropertyValue('--muted').trim().replace(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i,(_,r,g,b)=>'rgb('+[r,g,b].map(x=>parseInt(x,16)).join(', ')+')'),'Reconnect notices use muted text without a warning card');
+    timeline.relabel();
+    check(reconnect.textContent===timelineText('重新连接中')+'… 1/5'&&!reconnect.textContent.includes(timelineText('执行错误')),'Relabeling cannot restore the reconnect error heading');
     const group=messages.querySelector('.process-group');
     check(messages.querySelectorAll('.process-group').length===2&&!group.open,'Consecutive tools including failures share a collapsed disclosure');
     check(group.querySelector('.process-group-issues')?.textContent.includes('1'),'Collapsed tool issues have a visible count');

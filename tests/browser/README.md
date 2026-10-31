@@ -6,6 +6,10 @@
 
 这些脚本不会由 `npm run test:desktop` 执行。该命令只发现 `tests/` 和 `mobile/tests/` 下的 `*.test.js`、`*.test.cjs`、`*.test.mjs`；浏览器检查应单独记录实际执行与未执行情况。
 
+代码高亮检查 `code-highlight.browser.js` 在加载生产 Markdown bundle、本地 Prism 和样式的隔离页面中直接执行并返回 Promise。使用合成代码和剪贴板替身，检查 Java/SQL 等语言及别名、语言标签、流式未闭合围栏、HTML 安全、原文复制、按需加载失败和延迟返回、缓存及工作量上限、窄屏滚动和明暗配色。需实际等待结果，浏览器模拟不能替代 Android WebView 真机验收。
+
+`node scripts/smoke-reading-ui.cjs` 使用本机 Chromium 自动运行上述高亮与进度/重连夹具，覆盖浏览器/Android 宿主、320/390/844/1440 px 及中英两种语言，结果写入 `.tmp/reading-ui-result.json`。设置 `CMB_BROWSER` 可指定浏览器程序。`CMB_ANDROID_UI_FIXTURE=1 CMB_BROWSER=<浏览器程序> node scripts/smoke-wsl-app-ui.cjs` 另运行完整生产页面启动及 Android 界面夹具；两个入口均只使用合成内容。
+
 ## 进度说明与工具摘要
 
 Android 合成页面中加载 `android-density.browser.js` 后调用 `runAndroidDensityChecks()`，核验模型标识隐藏、小图标操作栏、复制与引用的原始正文、复制成功反馈、编辑和分支能力限制、流式更新状态、图标点击区域和执行详情间距。不访问真实剪贴板、不修改真实聊天。

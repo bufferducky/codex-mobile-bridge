@@ -18,6 +18,7 @@
     "shell/chat-list.css",
     "layouts/compact/shell.css",
     "shell/content.css",
+    "shared/code-highlight.css",
     "shared/output-directives.css",
     "features/chat/composer-quotes.css",
     "features/chat/message-management.css"

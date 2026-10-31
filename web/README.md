@@ -41,6 +41,8 @@ Codex 的 MCP、动态工具及保存历史中的工具输出，共用 `bridge/f
 
 ## 文件阅读模块
 
+聊天、侧边聊天和 Markdown 文件预览中的代码围栏共用 `shared/markdown.js`：顶部显示语言及复制按钮，按需加载本地 Prism 的 `syntax` 组件，支持 Java、SQL、JavaScript/TypeScript、Python、JSON/YAML、Shell、Kotlin、C/C++/C#、Go、Rust、Swift 等常用语言和别名。高亮只生成文本节点与词元 span，复制仍读取原始代码；未知语言、组件失败、单块超过 65,536 字符或 4,000 行时保留纯文本。每次消息渲染最多处理 131,072 个代码字符，缓存最多 32 块、262,144 个源码字符。`shared/code-highlight.css` 统一明暗主题下聊天与文件源码的配色。
+
 - `source-view.js` 用本地 Prism 词元生成只读源码节点，行号独立，复制取原文；软换行与原始行宽可切换。超过 65,536 字符或 4,000 行不高亮，超过 10,000 行省略行号，仍遵守 512 KiB 文本预览上限。见[源码约定](../.agents/notes/implemented/feature/2026-10-13-source-code-view.md)。
 - `pdf-preview.js` 使用随网关分发的 PDF.js legacy 模块、worker、CMap 和字体。沿用鉴权下载与 Range，并加 `preview=1`：服务端逐次检查实际大小不超过 `min(20 MiB, clickDownloadMiB)`，不能与显式下载或目录归档混用。可见页按需绘制，预算内保留至多两张邻近完成画布；缩放保留旧画布，单个离屏绘制完成后替换，文本层独立更新。已显示画布最多约 12 MP，替换缓冲另限约 4 MP；这是单个阅读器的画布预算，不是所有标签的总内存预算。
 - `html-preview.js` 只把文本交给已鉴权的 `/html-preview-shell`。父页核验消息来源与壳实例；壳的 CSP 与 iframe sandbox 隔离内联脚本，不授同源、网络、表单、弹窗或导航权限。Android/iOS 原生壳仅放行预期的预览子页面，拒绝其余高权限操作。关闭或切换到源码时销毁 iframe，标签返回重新握手。见[PDF/HTML 约定](../.agents/notes/implemented/feature/2026-10-13-pdf-html-preview-and-source-mode.md)。
@@ -66,5 +68,7 @@ Claude 账号面板的定时刷新只读已保存额度；只有显式 `details(
 列表与会话快照的 `access` 字段控制 CLI 历史阅读、显式连接和允许的操作。界面不自动接入 CLI；服务端独立校验相同能力，隐藏按钮不能替代权限检查。连接失败保留原因，连接成功后清除；诊断下载使用既有登录会话。无 `access` 的旧网关维持原桌面行为。
 
 ## 回复交互
+
+Codex 时间线中的独立 `Reconnecting... 1/5` 等自动重连记录显示为单行灰色状态，保留重试次数；不显示执行错误标题或黄色卡片。重试耗尽、带错误详情或截断正文的记录继续显示错误提示。
 
 审查卡片、后续操作、审查链接和选中片段引用见 [使用说明](../docs/output-interactions.md)。`shared/output-directives.js` 仅解析完整标记，文件入口仍依赖服务器授权的 artifact；`features/chat/composer-quotes.js` 观察原生选区并复用 `ComposerDrafts`，引用和操作按钮不自动发送。

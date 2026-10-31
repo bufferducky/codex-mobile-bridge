@@ -121,6 +121,14 @@ async function main(){
   const targets=await until(async()=>{const response=await fetch('http://127.0.0.1:'+debugPort+'/json/list');const value=await response.json();return value.find(item=>item.type==='page');});cdp=await connect(targets.webSocketDebuggerUrl);
   await cdp.call('Runtime.enable');await cdp.call('Page.enable');await cdp.call('Emulation.setDeviceMetricsOverride',{width:492,height:850,deviceScaleFactor:1,mobile:true});await cdp.call('Page.navigate',{url:origin});
   await until(()=>cdp.evaluate('typeof clientNavigation!=="undefined"&&clientNavigation.clients.length===3'));
+  if(androidFixture){
+   await until(()=>cdp.evaluate('typeof window.BridgePresentation!=="undefined"&&document.getElementById("android-ui-checks")'));
+   await cdp.evaluate('document.getElementById("android-ui-checks").click()');
+   await until(()=>cdp.evaluate('document.documentElement.dataset.androidChecks'));
+   const result=await cdp.evaluate('({status:document.documentElement.dataset.androidChecks,text:document.getElementById("android-ui-results").textContent,bootstrapHidden:document.getElementById("bootstrap-status").hidden})');
+   assert.equal(result.status,'passed',result.text);assert.equal(result.bootstrapHidden,true);assert.deepEqual(cdp.errors,[]);
+   fs.writeFileSync(path.join(root,'.tmp/android-app-ui-result.json'),JSON.stringify({...result,browserErrors:cdp.errors},null,2));console.log(JSON.stringify(result));return;
+  }
   await cdp.evaluate(fs.readFileSync(path.join(root,'tests/browser/codex-entries.browser.js'),'utf8'));
   const result=await cdp.evaluate('checkCodexEntries()');assert.ok(result.passed>=65);
   await cdp.evaluate('(async()=>{clientNavigation.manager?.dialog.close();await clientNavigation.toggle("'+wsl+'",true);await clientNavigation.choose("'+wsl+'");await document.getElementById("new-chat").onclick();document.getElementById("new-chat-project").value="__directory__";document.getElementById("new-chat-project").onchange();await document.getElementById("new-chat-directory-browse").onclick();})()');

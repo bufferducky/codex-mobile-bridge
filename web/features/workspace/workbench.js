@@ -521,6 +521,7 @@ class Workbench {
         ? {...await this.request(downloadUrl + '&info=1', undefined, tab.controller.signal), kind:'pdf'}
         : await this.request(this.url(session, 'preview', entry.path), undefined, tab.controller.signal);
       if (window.BridgeFeatures && ['pdf','text'].includes(result.kind)) await window.BridgeFeatures.load('files');
+      if (window.BridgeFeatures && result.kind === 'text') await window.BridgeFeatures.load('syntax').catch(() => { /* Keep source readable without syntax colors. */ });
       if (window.BridgeFeatures && result.kind === 'text' && /\.md$/i.test(result.name)) await window.BridgeFeatures.load('chat');
       if (tab.controller.signal.aborted || !this.sessions.has(session.key) || !session.files.includes(tab)) return;
       const head = this.node('div', 'wb-preview-head'), title = this.node('div', 'wb-preview-title'), actions = this.node('div', 'wb-preview-actions');

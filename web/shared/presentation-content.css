@@ -7,6 +7,7 @@
 .process-group-body>.message{font-size:var(--message-size);margin:12px 0}
 .execution-failure{border:1px solid var(--warning-line);background:var(--warning-bg);border-radius:12px;padding:12px;color:var(--warning-text)}
 .execution-failure>summary{font-weight:600}
+.timeline-row.reconnect-status{margin:4px 0;padding:0;border:0;background:transparent;color:var(--muted);font-size:12px;line-height:20px;overflow-wrap:anywhere}
 .process-group-body>.execution-failure{border:0;background:transparent;border-radius:0;padding:0;color:var(--muted)}
 .process-group-body>.execution-failure>summary{color:var(--warning-text);font-weight:400}
 .message-body,.appearance-reading-preview,#message{font-family:var(--reading-font,inherit);line-height:var(--reading-leading,var(--message-leading))}

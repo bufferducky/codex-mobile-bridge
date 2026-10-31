@@ -71,7 +71,15 @@ class ChatActivityStatus {
 
 // Fold consecutive tool records within one native turn. Public progress,
 // task errors, final answers, file summaries and tool images stay in the stream.
-function timelineFailure(row){return row.role==='error'||['failed','error','declined','cancelled'].includes(row.status)||Number.isInteger(row.exitCode)&&row.exitCode!==0;}
+function timelineReconnectText(row){
+  if(row.role!=='error'||row.truncated||row.attachments?.length||typeof row.text!=='string')return null;
+  // Native retry notices arrive as error items. Only the standalone notice is
+  // informational; exhausted retries and messages with error details stay errors.
+  const match=/^(?:reconnecting|正在重连|正在重新连接|重新连接中)(?:\.{3}|…)?\s*(?:(\d{1,3})\s*\/\s*(\d{1,3}))?$/i.exec(row.text.trim());
+  if(!match||match[2]&&(!Number(match[2])||Number(match[1])>Number(match[2])))return null;
+  return timelineText('重新连接中')+'…'+(match[1]?' '+match[1]+'/'+match[2]:'');
+}
+function timelineFailure(row){return !timelineReconnectText(row)&&(row.role==='error'||['failed','error','declined','cancelled'].includes(row.status)||Number.isInteger(row.exitCode)&&row.exitCode!==0);}
 function timelineActivityLabel(row){
   const label=row.title||row.kind;
   // A command's nonzero exit code need not mean that the whole task failed.
@@ -319,6 +327,11 @@ class ChatTimeline {
     }
   }
   renderRow(row,open){
+    const reconnect=timelineReconnectText(row);
+    if(reconnect){
+      const node=document.createElement('div');node.className='timeline-row reconnect-status';node.textContent=reconnect;
+      return node;
+    }
     const activity=row.role==='activity'||row.role==='fileChanges',toolImages=activity&&row.attachments?.some(item=>item.type==='toolImage');
     const node=document.createElement(activity&&!toolImages?'details':'div');
     node.className=toolImages?'tool-images timeline-row':activity?'activity timeline-row':'message timeline-row '+row.role;
@@ -457,6 +470,8 @@ class ChatTimeline {
     this.historyStatus();
     for(const [key,entry] of this.nodes){
       const row=this.rows.get(key)?.row;if(!row)continue;
+      const reconnect=timelineReconnectText(row);
+      if(reconnect){entry.node.textContent=reconnect;continue;}
       const node=entry.node,heading=(row.role==='activity'||row.role==='fileChanges')?(node.tagName==='DETAILS'?node.firstElementChild:node.querySelector('details.activity > summary')):node.firstElementChild;
       if(row.fileSummary){const label=node.querySelector('.edited-files-label');if(label)label.textContent=fileChangeLabel(row);const basis=node.querySelector('.edited-files-basis');if(basis)basis.textContent=timelineText('累计修改');}
       else if(heading)heading.textContent=(row.role==='activity'||row.role==='fileChanges')?timelineActivityLabel(row):row.role==='user'?timelineText('你'):row.role==='error'?timelineText('执行错误'):['CODEX',row.model&&[row.model,row.effort].filter(Boolean).join(' ')].filter(Boolean).join(' · ');

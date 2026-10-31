@@ -225,7 +225,7 @@ test('weak networks with successful progress can take longer than 30 seconds in 
 
 test('production markup excludes optional renderers from critical loading but retains versionable URLs',()=>{
   const html=fs.readFileSync(path.join(root,'web/index.html'),'utf8');
-  for(const [url,group] of [['/vendor/katex/katex.min.js','math'],['/vendor/katex/katex.min.css','math'],['/vendor/xterm/xterm.js','terminal'],['/terminal-panel.js','terminal'],['/source-view.js','files'],['/pdf-preview.js','files']]){
+  for(const [url,group] of [['/vendor/katex/katex.min.js','math'],['/vendor/katex/katex.min.css','math'],['/vendor/xterm/xterm.js','terminal'],['/terminal-panel.js','terminal'],['/vendor/prism/source-view.min.js','syntax'],['/source-view.js','files'],['/pdf-preview.js','files']]){
     const tag=html.match(new RegExp('<(?:script|link)[^>]*data-bridge-(?:src|href)="'+url.replaceAll('.','\\.')+'(?:\\?[^"]*)?"[^>]*>'))?.[0];
     assert.ok(tag,url);assert.ok(tag.includes('data-bridge-feature="'+group+'"'));
   }

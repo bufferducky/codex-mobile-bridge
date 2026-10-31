@@ -2,6 +2,7 @@
 // UI messages only. Never translate chat content, commands, model IDs or user input.
 const BridgeI18n=(()=>{
 const en={
+"纯文本":"Plain text",
 "按当前已加载的记录汇总":"Summary of the currently loaded records",
 "执行过程 · {count} 项工具活动":"Execution process · {count} tool activities",
 "执行详情 · {count} 项工具活动":"Execution details · tools: {count}",
