@@ -4,6 +4,8 @@
 
 修复个人版 v2.1.7 未包含此前本地权限修复的发布遗漏。桌面与手机版本为 **2.1.8**，Android/iOS 构建号 **41**。
 
+本次 GitHub Actions 接口拒绝执行，因此改为本机构建并验证 **macOS Apple Silicon / Intel 和 Android**。此版不提供 Windows、Linux 或 iOS 新包；这些平台继续保留 2.1.7。Mac 包完成签名、架构、启动、HTTPS 与安装包内权限代码验证；Intel 二进制通过 Rosetta 执行验证。
+
 ### 修复
 
 - Android 新建 Codex APP、本机/SSH CLI、WSL 会话时，明确提交完全访问偏好，网关转发至所选原生运行时。
@@ -21,6 +23,8 @@
 变更仅作用于 Android 显式创建的新 Codex 会话与侧边对话；已有聊天、已有侧边对话和其他宿主保持原权限。运行时与管理员限制仍生效。
 
 ### English
+
+GitHub Actions refused to execute builds for this repository. This release ships locally built and verified macOS arm64/x64 and Android packages; Windows, Linux and iOS packages remain at 2.1.7. Intel execution checks used Rosetta on Apple Silicon.
 
 Fix a release omission: v2.1.7 did not include the existing local Android full-access creation changes. Version **2.1.8**, mobile build **41**.
 

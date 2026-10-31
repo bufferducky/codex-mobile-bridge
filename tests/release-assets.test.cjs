@@ -2,16 +2,16 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
 const {generateKeyPairSync,createHash,sign}=require('node:crypto');
-const {releaseAssetNames,currentReleaseNotes,writeChecksums,verifyRelease}=require('../scripts/release-assets.cjs');
+const {releaseAssetNames,releaseTargets,currentReleaseNotes,writeChecksums,verifyRelease}=require('../scripts/release-assets.cjs');
 const {assetName}=require('../desktop/features/updates/updater.cjs');
 const version=require('../package.json').version;
-function fixture(t){
+function fixture(t,profile='full'){
   const parent=path.join(__dirname,'../.tmp');fs.mkdirSync(parent,{recursive:true});
   const directory=fs.mkdtempSync(path.join(parent,'release-assets-'));
   t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
-  for(const name of releaseAssetNames())fs.writeFileSync(path.join(directory,name),'fixture '+name);
+  for(const name of releaseAssetNames(version,profile))fs.writeFileSync(path.join(directory,name),'fixture '+name);
   const keys=generateKeyPairSync('ed25519'),assets={};
-  for(const [platform,arch] of [['darwin','arm64'],['darwin','x64'],['win32','x64']]){
+  for(const [platform,arch] of releaseTargets(profile)){
     const name=assetName(version,platform,arch),bytes=fs.readFileSync(path.join(directory,name));
     assets[`${platform}-${arch}`]={name,size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
   }
@@ -31,6 +31,14 @@ test('a complete signed desktop/mobile release has 14 checksummed assets',t=>{
   assert.deepEqual(verifyRelease(directory,{key}),{version,assets:14,checksums:14});
   const sums=fs.readFileSync(path.join(directory,'SHA256SUMS.txt'),'utf8');
   for(const name of ['Android.apk','iOS-unsigned.ipa','iOS-source.zip','bridge-update.json'])assert.ok(sums.includes(name));
+});
+test('Mac and Android releases explicitly require both signed Mac ZIPs, DMGs and the APK',t=>{
+  const {directory,key}=fixture(t,'mac-android');
+  assert.deepEqual(verifyRelease(directory,{key,profile:'mac-android'}),{version,assets:6,checksums:6});
+  assert.throws(()=>verifyRelease(directory,{key}),/incomplete/,'a partial release cannot claim full-platform verification');
+  fs.unlinkSync(path.join(directory,assetName(version,'darwin','x64')));
+  assert.throws(()=>verifyRelease(directory,{key,profile:'mac-android'}),/incomplete/);
+  assert.throws(()=>releaseAssetNames(version,'anything'),/Unknown release profile/);
 });
 test('desktop-only release cannot pass final verification or replace checksums',t=>{
   const {directory,key}=fixture(t),before=fs.readFileSync(path.join(directory,'SHA256SUMS.txt'),'utf8');

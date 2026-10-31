@@ -57,3 +57,5 @@ npm run test:updater
 `python3 -B scripts/test-mobile-notification-links.py` 提取 Android 实际通知入口方法，在隔离 Java 夹具中验证当前 WebView 复用、冷启动、电脑/中继隔离和无效链接；不打包或安装 APK。对应网页状态发现和延迟跳转回归在 `tests/client-navigation.test.cjs`。
 
 `scripts/gateway-resources.json` 与源路径测试保证清单一致，但冻结导入、签名、安装和更新必须在获准打包后、目标系统上另外验证。不要根据 macOS 单机测试宣称 Windows/Linux 已实机通过。
+
+`node scripts/smoke-creation-permissions.cjs [打包网关路径]` 使用隔离的数据目录、登录和工作区，检查实际包中服务的创建/侧边聊天/外观脚本与源码一致，并确认冻结网关在任何原生创建操作前验证权限参数；不会创建真实会话或执行模型任务。

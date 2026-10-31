@@ -77,6 +77,9 @@ jobs:
         run: node scripts/smoke-notifications.cjs
       - name: Verify packaged login and device access
         run: node scripts/smoke-auth.cjs
+      - name: Verify packaged Android creation permissions
+        if: hashFiles('scripts/smoke-creation-permissions.cjs') != ''
+        run: node scripts/smoke-creation-permissions.cjs
       - name: Verify packaged Windows HTTPS trust
         if: runner.os == 'Windows'
         run: python scripts/verify-https.py "dist/desktop/win-unpacked/resources/gateway/codex-mobile-gateway.exe"
@@ -151,6 +154,7 @@ jobs:
           dbus-run-session -- xvfb-run -a node scripts/smoke-linux.cjs "$executable"
           node scripts/smoke-notifications.cjs "$runtime"
           node scripts/smoke-auth.cjs "$runtime"
+          if test -f scripts/smoke-creation-permissions.cjs; then node scripts/smoke-creation-permissions.cjs "$runtime"; fi
           python scripts/verify-https.py "$runtime"
           CMB_TEST_RUNTIME="$runtime" dbus-run-session -- xvfb-run -a npm run test:pairing
       - name: Extract and launch the AppImage payload

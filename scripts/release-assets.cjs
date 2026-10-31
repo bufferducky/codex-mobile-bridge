@@ -9,14 +9,22 @@ const version=require('../package.json').version;
 const publicKey=fs.readFileSync(path.join(__dirname,'../desktop/features/updates/fork-update-public-key.pem'),'utf8');
 const isAsset=name=>/\.(dmg|zip|exe|deb|AppImage|apk|ipa)$/.test(name)||name==='bridge-update.json';
 const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-function releaseAssetNames(v=version){
+function releaseTargets(profile='full'){
+  if(!['full','mac-android'].includes(profile))throw Error('Unknown release profile: '+profile);
+  return [['darwin','arm64'],['darwin','x64'],...(profile==='full'?[['win32','x64']]:[])];
+}
+function releaseAssetNames(v=version,profile='full'){
+  releaseTargets(profile);
   const prefix=`Codex-Mobile-Bridge-${v}-`;
   return [
     ...['arm64','x64'].flatMap(arch=>['dmg','zip'].map(ext=>`${prefix}macOS-${arch}.${ext}`)),
+    ...(profile==='full'?[
     `${prefix}Windows-x64-Setup.exe`,`${prefix}Windows-x64.zip`,
     `${prefix}Linux-amd64.deb`,`${prefix}Linux-x86_64.AppImage`,
     `${prefix}Linux-arm64.deb`,`${prefix}Linux-arm64.AppImage`,
-    `${prefix}Android.apk`,`${prefix}iOS-unsigned.ipa`,`${prefix}iOS-source.zip`,
+    `${prefix}iOS-unsigned.ipa`,`${prefix}iOS-source.zip`,
+    ]:[]),
+    `${prefix}Android.apk`,
     'bridge-update.json',
   ].sort();
 }
@@ -32,15 +40,15 @@ function writeChecksums(directory){
   const sums=names.map(name=>digest(path.join(directory,name))+'  '+name);
   fs.writeFileSync(path.join(directory,'SHA256SUMS.txt'),sums.join('\n')+'\n');
 }
-function verifyRelease(directory,{write=false,key=publicKey}={}){
-  const names=releaseAssetNames(),actual=fs.readdirSync(directory).filter(isAsset).sort();
+function verifyRelease(directory,{write=false,key=publicKey,profile='full'}={}){
+  const names=releaseAssetNames(version,profile),actual=fs.readdirSync(directory).filter(isAsset).sort();
   if(JSON.stringify(actual)!==JSON.stringify(names))throw Error('Release assets are incomplete or unexpected. Required: '+names.join(', '));
   for(const name of names){
     const stat=fs.lstatSync(path.join(directory,name));
     if(!stat.isFile()||stat.size===0)throw Error('Release asset must be a nonempty regular file: '+name);
   }
   const bytes=fs.readFileSync(path.join(directory,'bridge-update.json'));
-  for(const [platform,arch] of [['darwin','arm64'],['darwin','x64'],['win32','x64']]){
+  for(const [platform,arch] of releaseTargets(profile)){
     const {asset}=manifest(bytes,key,{current:'0.0.0-preview.0',platform,arch,expected:version});
     const file=path.join(directory,asset.name);
     if(fs.statSync(file).size!==asset.size||digest(file)!==asset.sha256)throw Error('Signed update asset mismatch: '+asset.name);
@@ -58,12 +66,13 @@ function verifyRelease(directory,{write=false,key=publicKey}={}){
   return {version,assets:names.length,checksums:checked.size};
 }
 if(require.main===module){
-  const [command,input,output]=process.argv.slice(2);
-  if(command==='notes'&&input&&output){
+  const [command,input,...options]=process.argv.slice(2),output=options[0];
+  if(command==='notes'&&input&&output&&options.length===1){
     const notes=currentReleaseNotes(fs.readFileSync(input,'utf8'));
     fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,notes);
-  }else if(command==='verify'&&input&&(!output||output==='--write-checksums')){
-    console.log(JSON.stringify(verifyRelease(input,{write:output==='--write-checksums'})));
-  }else throw Error('Usage: release-assets.cjs notes <notes-file> <output-file> | verify <artifact-dir> [--write-checksums]');
+  }else if(command==='verify'&&input&&options.every(value=>value==='--write-checksums'||/^--profile=(full|mac-android)$/.test(value))){
+    const profile=options.find(value=>value.startsWith('--profile='))?.slice(10)||'full';
+    console.log(JSON.stringify(verifyRelease(input,{write:options.includes('--write-checksums'),profile})));
+  }else throw Error('Usage: release-assets.cjs notes <notes-file> <output-file> | verify <artifact-dir> [--write-checksums] [--profile=full|mac-android]');
 }
-module.exports={releaseAssetNames,currentReleaseNotes,writeChecksums,verifyRelease};
+module.exports={releaseAssetNames,releaseTargets,currentReleaseNotes,writeChecksums,verifyRelease};

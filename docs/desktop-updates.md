@@ -10,6 +10,8 @@
 
 如果某个平台需要单独重试，完成同一版本标签的构建后，可运行 **Assemble and verify release**，填写原桌面构建 run ID、成功的 Android run ID 和版本标签。它核验桌面产物对应标签且六个桌面/iOS任务全部成功，在 runner 上汇总、签名、上传草稿并重新下载验证；只有显式选中 publish 才在全部验证通过后发布。这样可恢复单个平台失败的发布，无须移动版本标签或重建已经成功的桌面包。
 
+GitHub Actions 不可用时，可在本机完成 macOS 两种架构和 Android 构建，显式使用 `--profile=mac-android` 签名和验证（`scripts/sign-update.cjs` 与 `scripts/release-assets.cjs verify` 均支持）。这个发布范围仍要求两套 DMG/ZIP、Android APK、签名清单和完整校验文件；默认 full 范围保持原有全部平台验证要求，不能将缺包误算成完整发布。上传草稿后重新下载并使用同一范围复核，再发布。
+
 本地 Android 正式包用 `python scripts/build-mobile-android.py`，必须提供原有签名；可设置 `CMB_ANDROID_KEYSTORE` 和 `CMB_ANDROID_KEYSTORE_PASSWORD`，或使用本机 `.local/android-signing/release.p12` 与权限为 0600 的 `release-password.txt`。构建不会自动生成正式密钥。`--dev-app` 继续打独立 Dev 包。
 
 ## 用户操作
