@@ -40,6 +40,11 @@ test('Mac and Android releases explicitly require both signed Mac ZIPs, DMGs and
   assert.throws(()=>verifyRelease(directory,{key,profile:'mac-android'}),/incomplete/);
   assert.throws(()=>releaseAssetNames(version,'anything'),/Unknown release profile/);
 });
+test('unverified build sidecars cannot enter a checked release directory',t=>{
+  const {directory,key}=fixture(t,'mac-android');
+  fs.writeFileSync(path.join(directory,`Codex-Mobile-Bridge-${version}-Android.apk.idsig`),'build sidecar');
+  assert.throws(()=>verifyRelease(directory,{key,profile:'mac-android'}),/incomplete or unexpected/);
+});
 test('desktop-only release cannot pass final verification or replace checksums',t=>{
   const {directory,key}=fixture(t),before=fs.readFileSync(path.join(directory,'SHA256SUMS.txt'),'utf8');
   fs.unlinkSync(path.join(directory,`Codex-Mobile-Bridge-${version}-Android.apk`));

@@ -41,7 +41,7 @@ function writeChecksums(directory){
   fs.writeFileSync(path.join(directory,'SHA256SUMS.txt'),sums.join('\n')+'\n');
 }
 function verifyRelease(directory,{write=false,key=publicKey,profile='full'}={}){
-  const names=releaseAssetNames(version,profile),actual=fs.readdirSync(directory).filter(isAsset).sort();
+  const names=releaseAssetNames(version,profile),actual=fs.readdirSync(directory).filter(name=>name!=='SHA256SUMS.txt').sort();
   if(JSON.stringify(actual)!==JSON.stringify(names))throw Error('Release assets are incomplete or unexpected. Required: '+names.join(', '));
   for(const name of names){
     const stat=fs.lstatSync(path.join(directory,name));
