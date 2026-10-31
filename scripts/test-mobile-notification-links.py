@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the actual Android notification entry method with isolated UI stubs."""
+"""Exercise Android notification entry and foreground reporting with UI stubs."""
 import os
 from pathlib import Path
 import shutil
@@ -28,12 +28,12 @@ import java.util.*;
 import java.util.function.Consumer;
 import io.github.try2love.codexbridge.GatewayURL;
 public class NotificationLinkTests {
- String origin="https://one.example"; WebView web=new WebView(origin+"/"); int generation=1,connects;
+ String origin="https://one.example"; WebView web=new WebView(origin+"/"); int generation=1,connects;boolean resumed;
  String connected=""; List<String> notices=new ArrayList<>();
  Set<String> saved(){return new HashSet<>(Arrays.asList("https://one.example","https://two.example","https://one.example/d/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));}
  String L(String s){return s;} void message(String s){notices.add(s);}
  void connect(String url){connects++;connected=url;web=new WebView(url);generation++;}
-''' + method(' boolean openIntent(') + r'''
+''' + method(' boolean openIntent(') + method(' void reportNotificationForeground(') + r'''
  static final String THREAD="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
  static Intent target(String origin,String thread){return new Intent(origin,thread,"local");}
  static void check(boolean yes,String message){if(!yes)throw new AssertionError(message);}
@@ -50,7 +50,12 @@ public class NotificationLinkTests {
   f=new NotificationLinkTests();f.web.url=f.origin+"/html-preview/shell";check(f.openIntent(target(f.origin,THREAD))&&f.connects==1,"preview document must not receive chat navigation");
   f=new NotificationLinkTests();check(f.openIntent(target("https://one.example/d/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",THREAD))&&f.connects==1,"relay identity must remain isolated");
   f=new NotificationLinkTests();existing=f.web;check(f.openIntent(target(f.origin,null))&&f.connects==0&&f.web==existing,"address-only notification keeps active computer");
-  System.out.println("Android notification links: warm reuse, cold launch, computer/relay isolation and invalid target checks passed");
+  f=new NotificationLinkTests();f.resumed=true;f.reportNotificationForeground();
+  check(f.web.scripts.size()==1&&f.web.scripts.get(0).contains("BridgeNativeForeground=true;")&&f.web.scripts.get(0).contains("bridge-native-visibility"),"resume reports actual native visibility to the current document");
+  f.resumed=false;f.reportNotificationForeground();check(f.web.scripts.get(1).contains("BridgeNativeForeground=false;"),"pause clears foreground visibility");
+  f.web.url="https://untrusted.example/";f.reportNotificationForeground();check(f.web.scripts.size()==2,"foreign document cannot receive foreground injection");
+  f.web=null;f.reportNotificationForeground();
+  System.out.println("Android notification links and foreground reporting: warm/cold routing, identity isolation, invalid targets and resume/pause checks passed");
  }
 }
 class Intent {

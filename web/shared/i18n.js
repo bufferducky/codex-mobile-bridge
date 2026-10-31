@@ -2,6 +2,8 @@
 // UI messages only. Never translate chat content, commands, model IDs or user input.
 const BridgeI18n=(()=>{
 const en={
+"智能手机提醒":"Smart phone alerts",
+"Mac 活跃时手机静默；锁屏或闲置 3 分钟后恢复。审批与提问等待 30 秒仍未处理时提醒；Android 正在查看的聊天静默，完成通知不补发。适用于 ntfy、Bark 和 PushPlus。":"Silence phone alerts while your Mac is active; resume when locked or idle for 3 minutes. Remind after 30 seconds for unanswered approvals and questions. Silence the chat being viewed on Android. Skipped completions are never replayed. Applies to ntfy, Bark and PushPlus.",
 "纯文本":"Plain text",
 "按当前已加载的记录汇总":"Summary of the currently loaded records",
 "执行过程 · {count} 项工具活动":"Execution process · {count} tool activities",

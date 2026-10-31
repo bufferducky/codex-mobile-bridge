@@ -18,6 +18,11 @@ THREAD = '11111111-1111-4111-8111-111111111111'
 
 
 class RegistryTests(unittest.TestCase):
+    def test_foreground_presence_only_accepts_post_through_relay(self):
+        validate('POST', '/api/mobile/presence')
+        with self.assertRaises(PermissionError):
+            validate('GET', '/api/mobile/presence')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=ROOT/'.tmp')
         self.r = Registry(self.temp.name)

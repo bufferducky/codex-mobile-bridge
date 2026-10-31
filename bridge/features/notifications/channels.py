@@ -23,7 +23,8 @@ DEFAULTS = {'enabled': False, 'server': 'https://ntfy.sh', 'topic': '', 'token':
             'webhookEnabled': False, 'webhookUrl': '', 'webhookHeaders': {},
             'webhookProvider': 'auto', 'webhookSignEnabled': False, 'webhookSignSecret': '',
             'webhookBodyTemplate': '{\n  "event": "{{event}}",\n  "title": "{{title}}",\n  "body": "{{body}}",\n  "session_name": "{{session_name}}",\n  "url": "{{url}}"\n}',
-            'clickBase': '', 'includeTitle': False, 'addressEnabled': True, 'addressName': '', 'securityEnabled': True, 'mobileEnabled': False, 'mobileAppLinks': False}
+            'clickBase': '', 'includeTitle': False, 'addressEnabled': True, 'addressName': '', 'securityEnabled': True, 'mobileEnabled': False, 'mobileAppLinks': False,
+            'smartNotifications': False}
 
 WEBHOOK_FIELDS = frozenset(('event', 'event_id', 'title', 'body', 'session_name', 'url', 'client', 'host', 'count'))
 WEBHOOK_TEMPLATES = {
@@ -264,7 +265,7 @@ def _save_settings_unlocked(data_dir, value):
     result = {**prior, **{k: value[k] for k in DEFAULTS if k in value}}
     result['server'] = at_field('ntfy-server', valid_url, str(result['server']), allow_path=True)
     result['barkServer'] = at_field('bark-server', valid_url, str(result['barkServer']), allow_path=True)
-    for key in ('enabled', 'barkEnabled', 'pushplusEnabled', 'webhookEnabled', 'webhookSignEnabled', 'includeTitle', 'addressEnabled', 'securityEnabled', 'mobileEnabled', 'mobileAppLinks'):
+    for key in ('enabled', 'barkEnabled', 'pushplusEnabled', 'webhookEnabled', 'webhookSignEnabled', 'includeTitle', 'addressEnabled', 'securityEnabled', 'mobileEnabled', 'mobileAppLinks', 'smartNotifications'):
         if not isinstance(result[key], bool):
             raise ValueError('通知开关格式不正确')
     if not isinstance(result['addressName'], str) or len(result['addressName']) > 80 or any(not c.isprintable() for c in result['addressName']):
@@ -608,6 +609,8 @@ class Notifications:
         self.target_signature = None
         self.wakeup = getattr(bridge, 'notification_event', threading.Event())
         self.worker = None
+        from bridge.features.notifications.attention import Attention
+        self.attention = Attention()
         from bridge.features.notifications.security import SecurityNotifications
         self.security = SecurityNotifications(self.data_dir)
         from bridge.features.notifications.events import MobileEvents
@@ -877,6 +880,25 @@ class Notifications:
         current = self._effective(row)
         if not current['notifyOnCompletion' if completed else 'notifyOnRequest']:
             return False
+        changed = False
+        # Keep the inbox and automation webhooks independent from phone alerts.
+        if config.get('smartNotifications') and channel in ('ntfy', 'bark', 'pushplus'):
+            viewing = self.attention.viewing(row)
+            active = self.attention.desktop_active() is True
+            if completed and (viewing or active):
+                for key in pending:
+                    self.ledger[key] = {'delivered': True, 'suppressed': True, 'time': now}
+                return True  # Persist the terminal decision; never replay on unlock/restart.
+            if not completed:
+                for key in pending:
+                    record = self.ledger.setdefault(key, {})
+                    if 'firstSeen' not in record:
+                        record.update(firstSeen=now, time=now)
+                        changed = True
+                pending = [key for key in pending if not viewing and
+                           (not active or now - self.ledger[key]['firstSeen'] >= 30)]
+                if not pending:
+                    return changed
         provider = self.desktop_provider(row['host'])
         client = {'claude': 'Claude', 'deepseek': 'DSH'}.get(provider, 'Codex')
         heading = client + (' 运行已完成' if completed else ' 需要你的确认')
@@ -897,12 +919,12 @@ class Notifications:
                     sender = {'ntfy': publish, 'bark': publish_bark, 'pushplus': publish_pushplus}[channel]
                     sender(config, heading, body, click)
             for key in pending:
-                self.ledger[key] = {'delivered': True, 'time': now}
+                self.ledger[key] = {**self.ledger.get(key, {}), 'delivered': True, 'time': now}
             self._status(channel, lastSent=now, error='')
         except Exception:
             for key in pending:
                 attempts = self.ledger.get(key, {}).get('attempts', 0) + 1
-                self.ledger[key] = {'delivered': False, 'attempts': attempts, 'next': now + min(300, 5 * 2 ** min(attempts, 6)), 'time': now}
+                self.ledger[key] = {**self.ledger.get(key, {}), 'delivered': False, 'attempts': attempts, 'next': now + min(300, 5 * 2 ** min(attempts, 6)), 'time': now}
             self._status(channel, error='发送失败，将在提醒仍开启时重试完成通知；待确认通知仅在请求仍待处理时重试。请检查服务地址、认证和网络。')
         return True
 

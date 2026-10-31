@@ -51,7 +51,7 @@ def validate(method, path, size=0):
     if ((method == 'GET' and (p.path == '/api/mobile/update' or re.fullmatch(r'/api/mobile/update/(?:status|packages)/[a-f0-9]{64}', p.path)))
             or (method == 'POST' and p.path == '/api/mobile/update/prepare')):
         return
-    if p.path == '/api/sessions' or (p.path in ('/api/projects', '/api/mobile/events') and method == 'GET') or (p.path in ('/api/activity', '/api/mobile/events/read') and method == 'POST'):
+    if p.path == '/api/sessions' or (p.path in ('/api/projects', '/api/mobile/events') and method == 'GET') or (p.path in ('/api/activity', '/api/mobile/events/read', '/api/mobile/presence') and method == 'POST'):
         return
     # /api/clients permits explicit disable, native quit, and confirmed Windows
     # forceDesktop; the gateway still enforces auth, CSRF and target verification.

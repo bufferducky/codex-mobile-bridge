@@ -1,3 +1,33 @@
+<a id="v2110"></a>
+
+## v2.1.10 · Mac 与安卓协同的智能手机提醒
+
+桌面与手机版本 **2.1.10**，Android/iOS 构建号 **43**。本次提供 **Mac Apple Silicon / Intel 和 Android**，沿用正式包名、Android 签名和桌面更新签名；Windows、Linux 和 iOS 未提供本版本安装包。GitHub Actions 当前禁用，采用项目规定的本机构建与签名校验流程。
+
+### 智能手机提醒
+
+在电脑 **消息通知**，或手机/Web **第三方通知 → 通用通知设置** 中开启 **智能手机提醒** 并保存。默认关闭，对 ntfy、Bark、PushPlus 的聊天提醒生效。
+
+- **Mac 活跃时静默**：Mac 已解锁且最近 3 分钟有键鼠操作时跳过完成推送；锁屏或闲置达到 3 分钟后，新完成的任务恢复推送。只读取系统闲置时长和控制台状态，不记录键鼠内容；关闭控制面板窗口后仍由网关判断。
+- **审批与提问等 30 秒**：Mac 活跃时，从网关发现每条请求起等待 30 秒，仍未处理才推送。已经处理的请求不发送；离开电脑或系统状态无法确认时正常推送。实际触达另受扫描周期和网络延迟影响。
+- **Android 同聊天静默**：手机前台正在查看的聊天跳过完成推送，暂缓审批与提问提醒；切换聊天、返回列表或退到后台后恢复。断网或进程退出时，前台租约最多 25 秒自动失效；撤销登录也立即失效。
+- **不积压补发**：被跳过的完成通知在离开电脑、重连或重启后不补发；仍待处理的请求继续提醒。手机收件箱仍保留事件，不自动标为已读。
+- **保留其他提醒**：安全、入口、手动测试、Webhook 和可选 APNs/FCM 系统推送继续使用原有规则。
+
+### 更新与真机验收
+
+Mac 和 Android 均需更新到本版，手机重新进入电脑连接，然后开启上述开关。Mac 可通过应用内检查更新，Android 使用同签名正式 APK 覆盖安装。手动替换 Mac App 前先停止网关并退出；保留原数据目录和手机绑定。
+
+源码回归覆盖 30 秒边界、每条请求独立计时、处理后取消、重启与重试、锁屏/闲置和未知状态、Android 前后台租约、认证/CSRF 与中继白名单。Android 原生夹具验证前后台状态上报及通知跳转。包签名、架构、内置网关和更新清单另在发布时验证；实际锁屏、键鼠闲置、ntfy 到达及 Android 前后台切换由用户升级后真机验收，源码和模拟测试不代表真机通过。
+
+### English
+
+Version **2.1.10**, mobile build **43**, adds opt-in smart phone alerts for ntfy, Bark and PushPlus. While an unlocked Mac has received input within 3 minutes, skip completion pushes and allow **30 seconds** for approvals and questions to be handled locally. Resume ordinary pushes when locked, idle or unable to determine desktop state. Android foreground chat leases suppress duplicates only for the chat being viewed and expire within 25 seconds without renewal. Skipped completions are persisted and never replayed after reconnect or restart. Inbox, security, address, Webhook and optional native push behavior remains independent.
+
+Update both the Mac gateway and Android app, then enable Smart phone alerts. Existing signing identities and Android application ID are preserved. This release ships macOS arm64/x64 and Android using local builds because repository Actions are disabled. Device validation follows installation; automated fixtures do not constitute physical device acceptance.
+
+---
+
 <a id="v219"></a>
 
 ## v2.1.9 · 汇总本地修复，完善代码阅读与重连显示

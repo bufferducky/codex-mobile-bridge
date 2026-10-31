@@ -1,4 +1,19 @@
 'use strict';
+// Short leases expire if a WebView is suspended or loses its network connection.
+function createNotificationPresence({read, send, newId, enabled=()=>true, schedule=setTimeout, cancel=clearTimeout}){
+  let viewer='',advertised=false,busy=false,queued=false,timer;
+  async function refresh(){
+    cancel(timer);
+    if(busy){queued=true;return;}
+    const route=enabled()?read():null;
+    if(!route&&!advertised){if(enabled())timer=schedule(refresh,10000);return;}
+    if(!viewer)viewer=newId();
+    advertised=!!route;busy=true;
+    try{await send({viewer,thread:route?.id||'',host:route?.host||''});}catch{/* An expired lease restores ordinary push. */}
+    finally{busy=false;if(queued){queued=false;refresh();}else if(enabled()||advertised)timer=schedule(refresh,10000);}
+  }
+  return {refresh};
+}
 // Capture once and remove the bearer fragment before any API request or chat routing.
 function takePairingToken(){
   if(!location.hash.startsWith('#pair='))return null;
@@ -102,7 +117,26 @@ const browserNavigation=new BrowserNavigation({
   },onError:error=>toast(error.message)
 });
 browserNavigation.paused=true;
-desktopSessions.onNavigation=()=>browserNavigation.sync();
+const notificationPresence=createNotificationPresence({
+  enabled:()=>BridgeHost.kind()==='android'&&!!csrf&&!$('app').hidden&&!document.hidden&&window.BridgeNativeForeground!==false,
+  read:()=>{
+    if(BridgeHost.kind()!=='android'||!csrf||$('app').hidden||document.hidden||window.BridgeNativeForeground===false)return null;
+    if(isCodexClient(clientNavigation.provider))return currentId&&$('app').classList.contains('chat-open')&&!workbench.isFileVisible?{id:currentId,host:currentHost}:null;
+    return desktopSessions.visibleActivity()?{id:desktopSessions.sid,host:'desktop:'+desktopSessions.provider}:null;
+  },
+  newId:uuid,
+  send:async body=>{
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
+    try{await fetch(hostUrl('/api/mobile/presence'),{method:'POST',credentials:'same-origin',cache:'no-store',keepalive:true,
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify(body),signal:controller.signal});}
+    finally{clearTimeout(timeout);}
+  }
+});
+for(const event of ['visibilitychange','bridge-authenticated','bridge-auth-lost','bridge-logged-out'])document.addEventListener(event,()=>notificationPresence.refresh());
+window.addEventListener('bridge-native-visibility',()=>notificationPresence.refresh());
+window.addEventListener('pagehide',()=>{window.BridgeNativeForeground=false;notificationPresence.refresh();});
+window.addEventListener('pageshow',()=>{window.BridgeNativeForeground=undefined;notificationPresence.refresh();});
+desktopSessions.onNavigation=()=>{browserNavigation.sync();notificationPresence.refresh();};
 desktopSessions.onHistoryInvalidated=()=>browserNavigation.invalidate();
 
 let codexAccountEntry='desktop',preferredWslEntry=clientNavigation.initialHost||'';
@@ -117,7 +151,7 @@ function refreshEntryAccounts(){
 clientNavigation.onApplicationChange=(previous,provider,{host}={})=>{
   if(host?.startsWith('wsl:')){preferredWslEntry=host;listSource='wsl';localStorage.setItem('codex-source-filter',listSource);}
   listGeneration++;saveDraft();listRows=[];availableSources=[];listOffset=0;listHasMore=true;listComplete=false;listReadFinished=false;listFilterKey='';listRenderStamp='';sourceFilterStamp='';
-  $('sessions').replaceChildren();$('host-errors').hidden=true;chatTimeline?.dispose();chatTimeline=null;currentId=null;state=null;workbench.reset();$('chat').hidden=true;$('welcome').hidden=false;$('app').classList.remove('chat-open');if(!browserNavigation.enabled())history.replaceState(null,'',location.pathname);browserNavigation.sync();
+  $('sessions').replaceChildren();$('host-errors').hidden=true;chatTimeline?.dispose();chatTimeline=null;currentId=null;state=null;workbench.reset();$('chat').hidden=true;$('welcome').hidden=false;$('app').classList.remove('chat-open');if(!browserNavigation.enabled())history.replaceState(null,'',location.pathname);browserNavigation.sync();notificationPresence.refresh();
   $('new-chat').hidden=false;refreshEntryAccounts();renderSourceFilter();
   if(provider==='codex'&&!$('app').hidden)return loadList(true).catch(e=>toast(e.message));
 };
@@ -724,7 +758,7 @@ $('work-mode').addEventListener('change',()=>{codexDraftTouched=true;saveDraft()
 
 let catalogStarted=false;
 let chatOpenGeneration=0;
-async function openChat(id,host="local"){const openGeneration=++chatOpenGeneration;if(messageActions.pending&&messageActions.dialog.open)return;messageActions.dialog.close();workbench.open(id,host);saveDraft();chatTimeline?.dispose();codexQuotes?.reset();currentId=id;currentHost=host;refreshEntryAccounts();codexDraftScope=null;codexDraftTouched=false;state=null;catalogStarted=false;workbench.current.access=sessionAccess(listRows.find(row=>row.id===id&&row.host===host)?.access);contextUsageControl.update(null);workModes.open(chatKey(id,host));$('send-mode').value='send';attachments.open(chatKey(id,host));modelCatalogGeneration++;catalogData={models:null,skills:null};catalogResults={models:null,skills:null};catalogTasks={models:null,skills:null};skillIndex=new Map();skillTotal=0;skillPages=[];skillQuery={q:'',offset:0,limit:200};invalidSkills=new Set();skillRequest++;modelRequest++;modelTarget=null;fastModeControl.reset();$('model-dialog').close();notificationState={available:false,watching:false,notifyOnCompletion:false};notificationRequest++;$('notify-dialog').close();$('rename-dialog').close();$('chat-details-dialog').close();$('notify-button').disabled=true;$('notify-button').textContent=t('提醒');try{selectedSkills=new Set(JSON.parse(!draftGateway?sessionStorage.getItem('skills:'+chatKey(id,host))||'[]':'[]'));}catch{selectedSkills=new Set();}renderSkillPills();approvalStamp='';submittedRequestIds.clear();$('messages').replaceChildren();$('approvals').replaceChildren();$('queued').replaceChildren();$('message').value=!draftGateway?sessionStorage.getItem('draft:'+chatKey(id,host))||'':'';$('send-error').textContent='';$('chat-title').textContent=t('正在连接…');$('chat-meta').textContent='';$('status').textContent=t('连接中');$('welcome').hidden=true;$('chat').hidden=false;$('app').classList.add('chat-open');$('send').disabled=true;if(!browserNavigation.sync({provider:'codex',id,host}))history.replaceState(null,'','#'+id+'~'+encodeURIComponent(host));document.querySelectorAll('.session').forEach(n=>n.classList.toggle('selected',n.dataset.id===id&&n.dataset.host===host));const opening=workbench.current;
+async function openChat(id,host="local"){const openGeneration=++chatOpenGeneration;if(messageActions.pending&&messageActions.dialog.open)return;messageActions.dialog.close();workbench.open(id,host);saveDraft();chatTimeline?.dispose();codexQuotes?.reset();currentId=id;currentHost=host;refreshEntryAccounts();codexDraftScope=null;codexDraftTouched=false;state=null;catalogStarted=false;workbench.current.access=sessionAccess(listRows.find(row=>row.id===id&&row.host===host)?.access);contextUsageControl.update(null);workModes.open(chatKey(id,host));$('send-mode').value='send';attachments.open(chatKey(id,host));modelCatalogGeneration++;catalogData={models:null,skills:null};catalogResults={models:null,skills:null};catalogTasks={models:null,skills:null};skillIndex=new Map();skillTotal=0;skillPages=[];skillQuery={q:'',offset:0,limit:200};invalidSkills=new Set();skillRequest++;modelRequest++;modelTarget=null;fastModeControl.reset();$('model-dialog').close();notificationState={available:false,watching:false,notifyOnCompletion:false};notificationRequest++;$('notify-dialog').close();$('rename-dialog').close();$('chat-details-dialog').close();$('notify-button').disabled=true;$('notify-button').textContent=t('提醒');try{selectedSkills=new Set(JSON.parse(!draftGateway?sessionStorage.getItem('skills:'+chatKey(id,host))||'[]':'[]'));}catch{selectedSkills=new Set();}renderSkillPills();approvalStamp='';submittedRequestIds.clear();$('messages').replaceChildren();$('approvals').replaceChildren();$('queued').replaceChildren();$('message').value=!draftGateway?sessionStorage.getItem('draft:'+chatKey(id,host))||'':'';$('send-error').textContent='';$('chat-title').textContent=t('正在连接…');$('chat-meta').textContent='';$('status').textContent=t('连接中');$('welcome').hidden=true;$('chat').hidden=false;$('app').classList.add('chat-open');$('send').disabled=true;if(!browserNavigation.sync({provider:'codex',id,host}))history.replaceState(null,'','#'+id+'~'+encodeURIComponent(host));document.querySelectorAll('.session').forEach(n=>n.classList.toggle('selected',n.dataset.id===id&&n.dataset.host===host));const opening=workbench.current;notificationPresence.refresh();
 try{if(window.BridgeFeatures)await window.BridgeFeatures.load('chat');}catch(error){if(openGeneration===chatOpenGeneration&&workbench.current===opening&&$('app').classList.contains('chat-open')){$('status').textContent=t('连接失败');$('send-error').textContent=t(error.message);}return;}
 if(openGeneration!==chatOpenGeneration||workbench.current!==opening||currentId!==id||currentHost!==host||!$('app').classList.contains('chat-open'))return;
 const timeline=chatTimeline=new ChatTimeline({elements:{working:$('working')},cacheKey:listIdentity?JSON.stringify([listIdentity,host,id]):'',url:action=>sessionUrl(id,action,host),request:api,renderMeta:renderState,onFile:async path=>{const session=workbench.current;if(currentId!==id||currentHost!==host||!session||session.id!==id||session.host!==host)return;try{const relative=timelineFilePath(path,state?.cwd);await workbench.request(workbench.url(session,'info',relative));if(workbench.current!==session||currentId!==id||currentHost!==host)return;await workbench.locate(session,relative);}catch(error){if(workbench.current===session)toast(t(error.message));}},canEdit:()=>currentAccess().canEditMessages,renderText:(node,text,files,fullText)=>renderMarkdown(node,text,files,file=>sessionUrl(id,'files/'+file.id,host),{fullText}),onAction:(action,row,timeline)=>{if(!currentAccess().canEditMessages)return;const pendingKey='fork-edit:'+host+'|'+id;let pending;try{pending=JSON.parse(sessionStorage.getItem(pendingKey));}catch{}if(pending&&pending.sourceTurnId===row.turnId&&action==='edit'){sessionStorage.setItem('message-edit:'+timeline.url('message-action')+':'+row.key,pending.text);sessionStorage.removeItem(pendingKey);}return messageActions.open(action,row,timeline);},status:text=>{$('status').textContent=t(text);}});
@@ -790,7 +824,7 @@ async function saveNotificationDefaults(){
   await window.loadNotificationDefaults();
 }
 $('notification-requests').onchange=$('notification-completions').onchange=saveNotificationDefaults;
-$('back').onclick=()=>{saveDraft();workbench.cancelLocate();desktopSessions.onListEnter();workbench.rememberScroll();workbench.stopThumbnails();$('app').classList.remove('chat-open');if(!browserNavigation.sync(null))history.replaceState(null,'',location.pathname);loadList(true).catch(e=>toast(e.message));};
+$('back').onclick=()=>{saveDraft();workbench.cancelLocate();desktopSessions.onListEnter();workbench.rememberScroll();workbench.stopThumbnails();$('app').classList.remove('chat-open');notificationPresence.refresh();if(!browserNavigation.sync(null))history.replaceState(null,'',location.pathname);loadList(true).catch(e=>toast(e.message));};
 function applyEntryCapabilities(view){
   const caps=view?.access?.runtime==='wsl'||view?.endpointId?.startsWith('wsl:')?view.capabilities||{}:{};
   for(const [id,capability] of [['permissions-button','permissions'],['skills-button','skills'],['notify-button','notifications']])$(id).hidden=caps[capability]===false;
@@ -1382,12 +1416,12 @@ function renderNotificationChannel(config){
   $('pushplus-token').placeholder=t(config[channel.hasSecret]?'已保存，留空保留':'填写 '+channel.name+' '+channel.secretLabel);
 }
 function renderNotificationCommon(config){
-  for(const id of ['security-enabled','address-enabled','include-title'])$('notification-'+id).checked=!!config[{'security-enabled':'securityEnabled','address-enabled':'addressEnabled','include-title':'includeTitle'}[id]];
+  for(const id of ['security-enabled','address-enabled','include-title','smart-notifications'])$('notification-'+id).checked=!!config[{'security-enabled':'securityEnabled','address-enabled':'addressEnabled','include-title':'includeTitle','smart-notifications':'smartNotifications'}[id]];
   $('notification-address-name').value=config.addressName||'';
   $('notification-click-base').value=config.clickBase||'';
 }
 function notificationCommonControls(enabled){
-  for(const id of ['security-enabled','address-enabled','address-name','include-title','click-base','common-save'])$('notification-'+id).disabled=!enabled;
+  for(const id of ['security-enabled','address-enabled','address-name','include-title','smart-notifications','click-base','common-save'])$('notification-'+id).disabled=!enabled;
 }
 async function loadNotificationCommon(request){
   notificationCommonLoaded=false;notificationCommonControls(false);
@@ -1449,6 +1483,7 @@ $('notification-common-save').onclick=async()=>{
   const request=notificationListRequest;
   try{
     const config=await api('/api/notifications/channels/common',{
+      smartNotifications:$('notification-smart-notifications').checked,
       securityEnabled:$('notification-security-enabled').checked,
       addressEnabled:$('notification-address-enabled').checked,
       addressName:$('notification-address-name').value.trim(),

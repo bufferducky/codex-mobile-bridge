@@ -632,6 +632,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.output(200, result)
             if path == '/api/harness' and not write:
                 return self.output(200, self.server.harness.status() if self.server.harness else {'running': False, 'state': 'stopped', 'url': '/harness/'})
+            if path == '/api/mobile/presence' and write:
+                manager = self.server.notifications
+                if manager is None:
+                    return self.output(503, {'error': '手机通知暂不可用'})
+                auth_manager = self.server.auth
+                owner = auth_manager.key(self.token())
+                def valid_presence():
+                    with auth_manager.lock:
+                        session = auth_manager.sessions.get(owner)
+                        return bool(session and auth_manager.valid(session) and auth_manager.permitted(session['ip']))
+                manager.attention.update(owner, self.read_json(), valid_presence)
+                return self.output(200, {'ok': True})
             if path == '/api/mobile/push':
                 manager = self.server.notifications
                 if manager is None:
@@ -914,7 +926,7 @@ class Handler(BaseHTTPRequestHandler):
                 manager = self.server.notifications
                 if manager is None:
                     raise ValueError('当前网关未启用通知服务')
-                fields = ('includeTitle', 'clickBase', 'securityEnabled', 'addressEnabled', 'addressName')
+                fields = ('includeTitle', 'clickBase', 'securityEnabled', 'addressEnabled', 'addressName', 'smartNotifications')
                 with manager.lock:
                     if write:
                         body = self.read_json()

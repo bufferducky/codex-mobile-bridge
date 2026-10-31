@@ -308,12 +308,13 @@ test('Webhook form has English labels and narrow-screen scroll styling',async()=
 test('common notification controls save once outside provider detail',async()=>{
   const ui=await fixture();await ui.nodes.get('pushplus-settings').onclick();
   ui.nodes.get('notification-security-enabled').checked=true;
+  ui.nodes.get('notification-smart-notifications').checked=true;
   ui.nodes.get('notification-address-enabled').checked=false;
   ui.nodes.get('notification-address-name').value='Home gateway';
   ui.nodes.get('notification-include-title').checked=true;
   ui.nodes.get('notification-click-base').value='https://bridge.example';
   await ui.nodes.get('notification-common-save').onclick();
-  assert.deepEqual(ui.writes[0].body,{securityEnabled:true,addressEnabled:false,addressName:'Home gateway',includeTitle:true,clickBase:'https://bridge.example'});
+  assert.deepEqual(ui.writes[0].body,{smartNotifications:true,securityEnabled:true,addressEnabled:false,addressName:'Home gateway',includeTitle:true,clickBase:'https://bridge.example'});
   assert.equal(ui.nodes.get('notification-channels-dialog').open,true);
 });
 

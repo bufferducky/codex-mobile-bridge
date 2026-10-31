@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -138,6 +139,128 @@ class ActiveNotificationsTests(unittest.TestCase):
         for value in self.manager.ledger.values():value['next'] = 0
         with patch('bridge.features.notifications.channels.publish') as send:
             self.manager.scan();send.assert_not_called()
+
+
+class AttentionNotificationTests(unittest.TestCase):
+    rediscover = ActiveNotificationsTests.rediscover
+
+    def setUp(self):
+        ActiveNotificationsTests.setUp(self)
+        save_settings(self.directory, {'smartNotifications': True})
+        self.manager.attention = SimpleNamespace(desktop_active=lambda: True, viewing=lambda row: False)
+
+    def test_active_mac_completion_is_not_pushed_or_replayed_after_leaving(self):
+        self.session.state['turns'][-1]['status'] = 'inProgress'
+        with patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan()
+            self.session.state['turns'][-1]['status'] = 'completed'
+            self.manager.scan()
+            send.assert_not_called()
+            self.manager.attention.desktop_active = lambda: False
+            self.rediscover(); self.manager.scan()
+            restarted = Notifications(self.source, self.directory)
+            restarted.attention = self.manager.attention
+            restarted.scan()
+            send.assert_not_called()
+
+    def test_active_mac_approval_waits_thirty_seconds(self):
+        self.session.state['requests'] = [{'id': 'approval', 'method': 'item/commandExecution/requestApproval', 'params': {}}]
+        with patch('bridge.features.notifications.channels.time.time', return_value=1000) as now, patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan(); send.assert_not_called()
+            now.return_value = 1029
+            self.manager.scan(); send.assert_not_called()
+            now.return_value = 1030
+            self.manager.scan(); send.assert_called_once()
+            self.manager.scan(); send.assert_called_once()
+
+    def test_questions_have_independent_thirty_second_deadlines(self):
+        self.session.state['requests'] = [{'id': 'first', 'method': 'item/tool/requestUserInput', 'params': {}}]
+        with patch('bridge.features.notifications.channels.time.time', return_value=1000) as now, patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan()
+            now.return_value = 1015
+            self.session.state['requests'].append({'id': 'second', 'method': 'item/tool/requestUserInput', 'params': {}})
+            self.manager.scan(); send.assert_not_called()
+            now.return_value = 1030
+            self.manager.scan(); send.assert_called_once()
+            self.assertIn('1 项', send.call_args.args[2])
+            now.return_value = 1045
+            self.manager.scan(); self.assertEqual(send.call_count, 2)
+            self.assertIn('1 项', send.call_args.args[2])
+
+    def test_webhooks_continue_while_phone_is_silent(self):
+        save_settings(self.directory, {'webhookEnabled': True, 'webhookUrl': 'https://hooks.example/test'})
+        self.session.state['requests'] = [{'id': 'first', 'method': 'item/tool/requestUserInput', 'params': {}}]
+        with patch('bridge.features.notifications.channels.publish') as phone, patch('bridge.features.notifications.channels.publish_webhook') as webhook:
+            self.manager.scan(); phone.assert_not_called(); webhook.assert_called_once()
+
+    def test_handled_approval_is_not_sent_after_timeout(self):
+        self.session.state['requests'] = [{'id': 'question', 'method': 'item/tool/requestUserInput', 'params': {}}]
+        with patch('bridge.features.notifications.channels.time.time', return_value=1000) as now, patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan()
+            self.session.state['requests'] = []
+            now.return_value = 1031
+            self.manager.scan(); send.assert_not_called()
+
+    def test_away_or_unknown_desktop_sends_immediately(self):
+        self.session.state['requests'] = [{'id': 'approval', 'method': 'item/commandExecution/requestApproval', 'params': {}}]
+        for active in (False, None):
+            with self.subTest(active=active), patch('bridge.features.notifications.channels.publish') as send:
+                self.manager.ledger.clear()
+                self.manager.attention.desktop_active = lambda: active
+                self.manager.scan(); send.assert_called_once()
+
+    def test_android_same_chat_defers_request_until_background_even_after_thirty_seconds(self):
+        self.session.state['requests'] = [{'id': 'approval', 'method': 'item/commandExecution/requestApproval', 'params': {}}]
+        self.manager.attention.viewing = lambda row: True
+        self.manager.attention.desktop_active = lambda: False
+        with patch('bridge.features.notifications.channels.time.time', return_value=1000) as now, patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan(); send.assert_not_called()
+            now.return_value = 1040
+            self.manager.scan(); send.assert_not_called()
+            self.manager.attention.viewing = lambda row: False
+            self.manager.scan(); send.assert_called_once()
+
+    def test_android_completion_is_skipped_and_inbox_still_records_it(self):
+        save_settings(self.directory, {'mobileEnabled': True})
+        self.manager.attention.viewing = lambda row: True
+        self.manager.attention.desktop_active = lambda: False
+        self.session.state['turns'][-1]['status'] = 'inProgress'
+        with patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan()
+            self.session.state['turns'][-1]['status'] = 'completed'
+            self.manager.scan(); send.assert_not_called()
+            self.assertEqual(len(self.manager.mobile.read()['events']), 1)
+            self.manager.attention.viewing = lambda row: False
+            self.rediscover(); self.manager.scan(); send.assert_not_called()
+
+    def test_new_completion_after_leaving_still_pushes(self):
+        self.manager.attention.desktop_active = lambda: False
+        self.session.state['turns'][-1]['status'] = 'inProgress'
+        with patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan()
+            self.session.state['turns'][-1]['status'] = 'completed'
+            self.manager.scan(); send.assert_called_once()
+
+    def test_restart_preserves_approval_age_and_retry_does_not_restart_delay(self):
+        self.session.state['requests'] = [{'id': 'approval', 'method': 'item/commandExecution/requestApproval', 'params': {}}]
+        with patch('bridge.features.notifications.channels.time.time', return_value=1000) as now, patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan()
+            self.rediscover()
+            restarted = Notifications(self.source, self.directory)
+            restarted.attention = self.manager.attention
+            now.return_value = 1030
+            send.side_effect = OSError('synthetic failure')
+            restarted.scan(); send.assert_called_once()
+            now.return_value = 1041
+            send.side_effect = None
+            restarted.scan(); self.assertEqual(send.call_count, 2)
+
+    def test_disabled_smart_mode_retains_immediate_delivery(self):
+        save_settings(self.directory, {'smartNotifications': False})
+        self.session.state['requests'] = [{'id': 'approval', 'method': 'item/commandExecution/requestApproval', 'params': {}}]
+        with patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.scan(); send.assert_called_once()
+            self.manager.scan(); send.assert_called_once()
 
 
 class DiscoveryTests(unittest.TestCase):
