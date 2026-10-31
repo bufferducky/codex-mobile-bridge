@@ -1,3 +1,42 @@
+<a id="v219"></a>
+
+## v2.1.9 · 汇总本地修复，完善代码阅读与重连显示
+
+本次以已同步的 **main** 为唯一发布源码，汇总此前仍留在本地的修复，保留 2.1.7 的通知导航和 2.1.8 的新会话完全访问权限修复。桌面与手机版本为 **2.1.9**，Android/iOS 构建号 **42**。
+
+### 本次完整变更
+
+- **代码高亮与语言标签**：聊天、侧边聊天及 Markdown 文件预览中的代码块共用本地 Prism。支持 Java、SQL、JavaScript/TypeScript、Python、JSON/YAML、Shell、Kotlin、C/C++/C#、Go、Rust、Swift 等常用语言及别名；顶部显示语言与复制按钮，复制始终返回原始代码。
+- **流式与弱网回退**：未闭合代码围栏仍可阅读；词元高亮只生成文本节点与 span，不执行代码或 HTML。按需加载失败、未知语言和超大代码块保留纯文本。限制单块、单次渲染和缓存大小，减少长消息更新时的重复计算。
+- **文件源码阅读**：源码和聊天共用明暗主题高亮配色。预览按需加载语法组件，失败时保留可读源码；代码标题独立于横向滚动区，修正 Markdown 预览代码块的顶部空白和边框。
+- **自动重连提示**：独立的 `Reconnecting... 1/5` 等原生重试记录显示为紧凑的灰色单行状态，保留次数；不再误显示为执行错误卡。重试耗尽、附带错误详情或截断的记录仍作为错误展示。
+- **完整本地代码归并**：已发布的通知、权限和创建回归与剩余阅读/重连改动合入 main，原开发目录同步到 main；原始改动另有本机私有备份，版本号、正式包名与签名不回退。
+
+### 保留的通知与权限修复
+
+- 点击 Android 通知复用已有 Activity；同一电脑在现有 WebView 中跳转会话，保留草稿和标签。等待应用发现结果后再路由，连续通知以最新目标为准；主动切换或退出登录取消等待中的跳转。
+- Android 新建 Codex APP/CLI/WSL 会话与侧边对话默认完全访问；普通空会话通过原生 `thread/settings/update` 持久化，重新打开仍保留。主会话及已有聊天权限保持原样，创建回执绑定权限偏好，未知创建结果不自动重放。
+- 更新检查、正式 Android 包名及更新签名继续使用本个人仓库和原身份。
+
+### 验证与发布范围
+
+- 完整前端、更新器、后端源码回归；真实 Chromium 中覆盖浏览器/Android 宿主、320/390/844/1440 px 与中英文，高亮每个场景 65 项检查、进度/重连每个语言场景 25 项检查。
+- 完整生产页面使用合成 API 通过 Android 启动、界面和本地字体检查；浏览器模拟不代替 Android 真机验收。
+- 隔离真实 Codex 运行时检查空会话重开及侧边对话完全访问，不启动模型任务；实际安装包另检查资源响应、权限验证、签名、架构和启动。
+- 本次提供 **Mac Apple Silicon / Intel 和 Android**；GitHub Actions 如仍拒绝执行则使用本机目标架构构建，Intel 执行使用 Rosetta。未提供本版本的 Windows、Linux 和 iOS 包，不沿用旧文件冒充新版本。
+
+### 安装测试
+
+优先在 Mac App 内检查更新；手动安装前先“停止网关并退出”，再覆盖安装并重新启动，避免旧进程与新资源混用。Android 正式版使用相同包名 `io.github.bufferducky.codexbridge` 和原正式签名覆盖安装，保留电脑列表与有效绑定。手机重新打开电脑连接并刷新页面后，测试新建普通/侧边对话、通知跳转、代码块显示/复制和重连提示。
+
+### English
+
+Version **2.1.9**, mobile build **42**, consolidates every remaining local fix onto main. Add language-labelled local syntax highlighting to chat, side chat and Markdown previews, shared light/dark colors, bounded streaming token caches and readable plain-text fallback. Keep copy tied to the original source and prevent HTML/code execution. Show standalone native reconnect retries as a compact muted status line; preserve actual error details.
+
+Includes the prior notification routing and persisted Android full-access creation fixes. Fresh Chromium checks cover browser/Android hosts, four viewport widths and both languages; complete Android page startup and native isolated permission validation are also exercised. Browser simulation does not constitute Android device validation. This release ships macOS arm64/x64 and Android, preserving existing signing identities. Fully stop and quit the desktop gateway before manual replacement, then refresh Android's connected page. Existing conversations retain their permissions.
+
+---
+
 <a id="v218"></a>
 
 ## v2.1.8 · 补齐安卓新对话与侧边对话的完全访问权限
