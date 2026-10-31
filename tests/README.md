@@ -50,6 +50,8 @@ npm run test:updater
 
 ## 手机与打包
 
+空会话权限持久化可用 `python -B tests/acceptance/codex_creation_permissions_native.py --runtime /明确的/codex` 验收。它在临时 `CODEX_HOME` 中调用真实运行时，检查新建后关闭运行时、重新打开仍为完全访问，并检查侧边聊天；不读取个人配置、不启动模型任务或打开桌面。此验收不包含在源码测试中。
+
 `mobile/tests/` 中 Java/Swift 用例由相应 `scripts/test-mobile-*`、`scripts/test-ios-*` 驱动，可能编译测试程序；只在本次任务允许且环境具备时执行。Web 资源验证不代替 Android WebView 或 iOS WKWebView 的原生交互验证。
 
 `python3 -B scripts/test-mobile-notification-links.py` 提取 Android 实际通知入口方法，在隔离 Java 夹具中验证当前 WebView 复用、冷启动、电脑/中继隔离和无效链接；不打包或安装 APK。对应网页状态发现和延迟跳转回归在 `tests/client-navigation.test.cjs`。

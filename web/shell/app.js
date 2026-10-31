@@ -561,14 +561,14 @@ $('new-chat-form').onsubmit=async event=>{
   let attempt;
   try{attempt=JSON.parse(sessionStorage.getItem('new-chat-attempt')||'null');}catch{}
   const attemptKind=kind==='wsl'?undefined:kind;
-  if(!attempt||attempt.selection!==selection||attempt.title!==title||attempt.entry!==newChatEntry||attempt.kind!==attemptKind)attempt={id:uuid(),selection,project,title,entry:newChatEntry,...(attemptKind?{kind:attemptKind}:{})};
+  if(!attempt||attempt.selection!==selection||attempt.title!==title||attempt.entry!==newChatEntry||attempt.kind!==attemptKind)attempt={id:uuid(),selection,project,title,entry:newChatEntry,...(attemptKind?{kind:attemptKind}:{}),...(BridgeHost.kind()==='android'?{permissionMode:'full-access'}:{})};
   sessionStorage.setItem('new-chat-attempt',JSON.stringify(attempt));
   newChatRequest++;creatingChat=true;setLanguageBusy();$('new-chat-error').textContent='';$('new-chat-submit').textContent=t('正在创建…');
   $('new-chat-form').querySelectorAll('input,select,button').forEach(n=>n.disabled=true);
   document.querySelector('[data-close="new-chat-dialog"]').disabled=true;
   try{
     if(directory&&attempt.project==='__directory__'){attempt.project=(await api(newChatUrl('/api/projects'),directory)).project.key;sessionStorage.setItem('new-chat-attempt',JSON.stringify(attempt));}
-    const result=await api(newChatUrl('/api/sessions'),{id:attempt.id,project:attempt.project,title:attempt.title,...(attempt.kind?{kind:attempt.kind}:{})});
+    const result=await api(newChatUrl('/api/sessions'),{id:attempt.id,project:attempt.project,title:attempt.title,...(attempt.kind?{kind:attempt.kind}:{}),...(attempt.permissionMode?{permissionMode:attempt.permissionMode}:{})});
     sessionStorage.removeItem('new-chat-attempt');$('new-chat-dialog').close();
     $('search').value='';$('archived').value='false';
     loadList(true).catch(e=>toast(e.message));toast(result.message);

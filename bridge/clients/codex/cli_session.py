@@ -19,6 +19,7 @@ from bridge.clients.codex.remote import RemoteStore, RemoteUnavailable, remote_m
 from bridge.platforms.codex_daemon_env import read_daemon_environment, DaemonEnvironmentUnavailable
 from bridge.features.sessions.goal import GoalError, GoalUnavailable, GoalUnsupported, normalize_goal_result
 from bridge.features.sessions import linux_permissions
+from bridge.features.sessions.create import creation_permission_settings
 from bridge.features.sessions.store import SessionStore, StoreUnavailable
 
 
@@ -174,8 +175,9 @@ class CliSessions:
         """Fail closed on unknown native status before a local account change."""
         return self.daemon_status() != 'stopped'
 
-    def create(self, cwd, title, on_start=None, on_created=None):
+    def create(self, cwd, title, on_start=None, on_created=None, permission_mode=None):
         """An explicit new CLI chat; no turn is started."""
+        permissions = creation_permission_settings(permission_mode)
         if not isinstance(cwd, str) or not cwd or (self.alias is None and not Path(cwd).is_dir()):
             raise AppServerUnavailable('CLI 项目目录不存在')
         info = self._connect_explicit()
@@ -188,12 +190,16 @@ class CliSessions:
             self.remote_home = remote_home
         if on_start is not None:
             on_start()
-        result = self.client.request('thread/start', {'cwd': cwd, 'ephemeral': False, 'threadSource': 'cli'})
+        result = self.client.request('thread/start', {'cwd': cwd, 'ephemeral': False, 'threadSource': 'cli', **permissions})
         thread = result.get('thread') or {}
         thread_id = thread.get('id')
         if not isinstance(thread_id, str) or thread.get('cwd') != cwd or not thread.get('modelProvider'):
             raise AppServerUnsupported('CLI creation returned an unverified thread')
         uuid.UUID(thread_id)
+        self.client.request('thread/name/set', {'threadId': thread_id, 'name': title})
+        if permissions:
+            # Persist empty-thread settings before exposing a completed creation.
+            self.client.request('thread/settings/update', {'threadId': thread_id, **permissions})
         if on_created is not None:
             on_created(thread_id)
         with self.lock:
@@ -205,7 +211,6 @@ class CliSessions:
                                         'permissions': {key: copy.deepcopy(result[key]) for key in
                                                         ('approvalPolicy', 'approvalsReviewer', 'sandbox', 'activePermissionProfile')
                                                         if key in result}, 'goal': None}
-        self.client.request('thread/name/set', {'threadId': thread_id, 'name': title})
         return self.refresh(thread_id)
 
     def archive_call(self, thread_id, archived, identifiers, disconnect=False, check_scope=None):

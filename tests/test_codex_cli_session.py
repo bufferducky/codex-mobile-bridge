@@ -87,6 +87,27 @@ class CliSessionTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_new_cli_full_access_is_sent_at_start_and_saved_from_native_response(self):
+        identifier = '12345678-1234-1234-1234-123456789abc'
+        permissions = {'approvalPolicy': 'never', 'approvalsReviewer': 'user',
+                       'sandbox': {'type': 'dangerFullAccess'},
+                       'activePermissionProfile': {'id': ':danger-full-access'}}
+        self.fake.request = Mock(side_effect=lambda method, params: {
+            'thread': {'id': identifier, 'cwd': str(self.home), 'modelProvider': 'original-provider'},
+            **permissions} if method == 'thread/start' else {})
+        with patch.object(self.sessions, '_connect_explicit', return_value={'codexHome': str(self.home)}), \
+             patch.object(self.sessions, 'refresh', return_value={'id': identifier}):
+            self.sessions.create(str(self.home), 'New', permission_mode='full-access')
+        self.assertEqual(self.fake.request.call_args_list[0].args, ('thread/start', {
+            'cwd': str(self.home), 'ephemeral': False, 'threadSource': 'cli',
+            'permissions': ':danger-full-access', 'approvalPolicy': 'never', 'approvalsReviewer': 'user'}))
+        self.assertEqual(self.fake.request.call_args_list[1].args[0], 'thread/name/set')
+        self.assertEqual(self.fake.request.call_args_list[2].args, ('thread/settings/update', {
+            'threadId': identifier, 'permissions': ':danger-full-access',
+            'approvalPolicy': 'never', 'approvalsReviewer': 'user'}))
+        self.assertEqual(self.sessions.metadata[identifier]['permissions'], permissions)
+        self.assertFalse(any(call.args[0] in ('thread/resume', 'turn/start') for call in self.fake.request.call_args_list))
+
     def test_passive_attach_does_not_connect_or_resume(self):
         self.sessions._start_daemon = Mock()
         Path(self.fake.socket_path).unlink()

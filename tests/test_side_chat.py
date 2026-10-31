@@ -197,6 +197,32 @@ class SideChatServiceTests(unittest.TestCase):
         self.assertFalse(any(r['method'] == 'thread-follower-start-turn' for r in self.fixture.requests))
         bridge.side_chat(support.THREAD, 'browser', 'close', {'id': view['id']})
 
+    def test_full_access_child_overrides_restrictive_parent_without_mutating_it(self):
+        bridge = self.bridge
+        bridge.catalog_reader.executable = 'fixture-runtime'
+        bridge.side_chats.factory = lambda *args: SideChat(*args, runtime_factory=RuntimeFixture)
+        self.fixture.state.update(cwd=str(self.root), currentPermissions={
+            'sandboxPolicy': {'type': 'workspaceWrite'}, 'approvalPolicy': 'on-request',
+            'approvalsReviewer': 'auto_review', 'activePermissionProfile': {'id': ':workspace'}})
+        before = copy.deepcopy(self.fixture.state)
+        body = {'creationId': str(uuid.uuid4()), 'permissionMode': 'full-access'}
+        with patch('bridge.features.sessions.side_chat.check_runtime'):
+            view = bridge.side_chat(support.THREAD, 'phone', 'create', body)
+            self.assertEqual(bridge.side_chat(support.THREAD, 'phone', 'create', body)['id'], view['id'])
+        child = bridge.side_chats.chats[support.THREAD]
+        fork = child.runtime.calls[0][1]
+        self.assertEqual(fork['permissions'], ':danger-full-access')
+        self.assertEqual(fork['approvalPolicy'], 'never')
+        self.assertEqual(fork['approvalsReviewer'], 'user')
+        self.assertNotIn('sandbox', fork)
+        self.assertEqual(view['permissionMode'], 'full-access')
+        child.send('Test', str(uuid.uuid4()))
+        turn = next(params for method, params in child.runtime.calls if method == 'turn/start')
+        self.assertEqual(turn['permissions'], ':danger-full-access')
+        self.assertEqual(turn['approvalPolicy'], 'never')
+        self.assertEqual(self.fixture.state, before)
+        self.assertEqual(sum(method == 'thread/fork' for method, _ in child.runtime.calls), 1)
+
 
 class SideChatHttpTests(unittest.TestCase):
     setUpClass = classmethod(support.HttpTests.setUpClass.__func__)
@@ -204,6 +230,28 @@ class SideChatHttpTests(unittest.TestCase):
     tearDown = support.HttpTests.tearDown
     request = support.HttpTests.request
     login = support.HttpTests.login
+
+    def test_creation_permission_preference_is_forwarded_after_auth_and_csrf(self):
+        from unittest.mock import Mock
+        bridge = self.server.bridge
+        bridge.create_chat = Mock(return_value={'id': support.THREAD, 'host': 'local'})
+        body = {'project': 'local|independent', 'title': 'Android', 'id': str(uuid.uuid4()),
+                'permissionMode': 'full-access'}
+        self.assertEqual(self.request('POST', '/api/sessions', body)[0], 401)
+        auth = self.login()
+        self.assertEqual(self.request('POST', '/api/sessions', body, {'Cookie': auth['Cookie']})[0], 403)
+        bridge.create_chat.assert_not_called()
+        for kind in ('desktop', 'cli'):
+            self.assertEqual(self.request('POST', '/api/sessions', {**body, 'kind': kind}, auth)[0], 200)
+            bridge.create_chat.assert_called_with(body['project'], body['title'], body['id'],
+                                                 kind=kind, permission_mode='full-access')
+        identifier = 'wsl:' + 'a' * 32
+        bridge.entries = Mock()
+        bridge.entries.get.return_value.create_chat.return_value = {'id': support.THREAD, 'host': identifier}
+        self.assertEqual(self.request('POST', '/api/sessions?entry=' + identifier, body, auth)[0], 200)
+        bridge.entries.get.assert_called_with(identifier)
+        bridge.entries.get.return_value.create_chat.assert_called_once_with(
+            body['project'], body['title'], body['id'], permission_mode='full-access')
 
     def test_auth_csrf_and_closed_schema(self):
         path = '/api/sessions/'+support.THREAD+'/side-chat'
@@ -213,6 +261,7 @@ class SideChatHttpTests(unittest.TestCase):
         self.server.bridge.side_chat = lambda *args: calls.append(args) or {'connected': True}
         self.assertEqual(self.request('GET', path, headers=auth)[0], 200)
         for body in ({'action': 'create', 'creationId': str(uuid.uuid4())},
+                     {'action': 'create', 'creationId': str(uuid.uuid4()), 'permissionMode': 'full-access'},
                      {'action': 'close', 'id': support.THREAD}, {'action': 'stop', 'id': support.THREAD},
                      {'action': 'respond', 'id': support.THREAD, 'requestId': 1, 'response': {'decision': 'decline'}},
                      {'action': 'send', 'id': support.THREAD, 'submissionId': str(uuid.uuid4()), 'text': 'question'}):

@@ -36,7 +36,7 @@ from bridge.clients.codex.remote import AppHosts, RemoteStore, RemoteCatalog, Re
 from bridge.features.sessions.create import (
     archive_thread, rename_thread, independent_directory, create_empty, fork_copy, open_in_desktop, open_project_in_desktop,
     CreationError, CreationUnavailable, ForkUnavailable, project_directory,
-    project_directory_listing,
+    project_directory_listing, creation_permission_settings,
 )
 from bridge.features.sessions.archive import ArchiveCommands
 from bridge.features.sessions.pins import SessionPins
@@ -700,7 +700,9 @@ class Bridge:
         return dict(project, nativeProject=True, name=native.get('name') or project.get('name'))
 
     @operation
-    def create_chat(self, project_key, title, request_id, kind='desktop'):
+    def create_chat(self, project_key, title, request_id, kind='desktop', permission_mode=None):
+        creation_permission_settings(permission_mode)
+        permission_options = {'permission_mode': permission_mode} if permission_mode is not None else {}
         if not isinstance(request_id, str):
             raise ValueError('创建请求标识无效')
         uuid.UUID(request_id)
@@ -720,6 +722,7 @@ class Bridge:
             if entry:
                 if (entry['project'] != project_key or entry['title'] != title or
                         entry.get('kind', 'desktop') != kind or
+                        entry.get('permissionMode') != permission_mode or
                         entry.get('cwd', project['cwd']) != project['cwd']):
                     raise ValueError('同一创建请求不能用于不同内容')
                 if not entry.get('id') and entry.get('phase') not in ('registering-project', 'project-ready'):
@@ -736,7 +739,7 @@ class Bridge:
                     if project['host'] != 'local' and project.get('directoryIdentity') and not project.get('nativeProject'):
                         raise CreationUnavailable('请先在电脑 Codex App 添加此 SSH 项目，再重新选择；当前接入尚不支持远程侧栏项目登记')
                     self.ipc.connect()
-                entry = {'project': project_key, 'title': title, 'kind': kind,
+                entry = {'project': project_key, 'title': title, 'kind': kind, 'permissionMode': permission_mode,
                          'cwd': project['cwd'], 'host': project['host'],
                          'directoryIdentity': project.get('directoryIdentity'), 'at': time.time()}
                 self.creations[request_id] = entry
@@ -767,7 +770,7 @@ class Bridge:
                                 cli_bridge.cli_sessions.alias != self.hosts.hosts().get(project['host'], {}).get('alias')):
                             raise ValueError('原 SSH 主机配置已变化，请重启网关后重新选择项目')
                         state = cli_bridge.cli_sessions.create(
-                            project['cwd'], title, on_start=mark_started, on_created=mark_created)
+                            project['cwd'], title, on_start=mark_started, on_created=mark_created, **permission_options)
                         thread_id = state['id']
                     except AppServerUnavailable:
                         if not entry.get('started'):
@@ -784,7 +787,7 @@ class Bridge:
                             entry['phase'] = 'creating-thread'
                             self._save_creations()
                         thread_id = create_empty(self.catalog_reader.executable, self.codex_home, cwd, title,
-                                                 project=native_project)
+                                                 project=native_project, **permission_options)
                     except CreationUnavailable:
                         # No thread mutation happened: retrying this request cannot
                         # create a duplicate. Keep uncertain post-start results recorded.
@@ -801,7 +804,7 @@ class Bridge:
                     source += 'runtime=shutil.which("codex") or str(Path.home()/".local/bin/codex")\n'
                     if project.get('directoryIdentity'):
                         source += 'project_directory(**' + payload({'value': project['cwd'], 'expected': project['directoryIdentity']}) + ')\n'
-                    source += 'print(json.dumps({"id":create_empty(runtime, home, **' + payload({'cwd': project['cwd'], 'title': title}) + ')}))\n'
+                    source += 'print(json.dumps({"id":create_empty(runtime, home, **' + payload({'cwd': project['cwd'], 'title': title, **permission_options}) + ')}))\n'
                     thread_id = ssh_read(host['alias'], source, timeout=90)['id']
                 uuid.UUID(thread_id)
                 entry['id'] = thread_id
@@ -1444,6 +1447,7 @@ class Bridge:
         self.store.get(thread_id)
         snapshot = settings = None
         if action == 'create':
+            creation_permissions = creation_permission_settings(body.get('permissionMode'))
             if self.host != 'local':
                 raise ValueError('此预览暂支持网关电脑上的聊天，SSH 远程工作区尚未接入侧边聊天')
             # Follow only: creating a child must never resume or execute the parent.
@@ -1453,6 +1457,7 @@ class Bridge:
                     raise ValueError('尚未取得主聊天的实时配置，请等待连接完成后重试')
                 snapshot = copy.deepcopy(session.state)
                 settings = self._fork_settings(snapshot)
+            settings.update(creation_permissions)
             permissions = snapshot.get('currentPermissions') or {}
             policy = permissions.get('sandboxPolicy') or {}
             if not settings.get('permissions') and policy.get('type'):

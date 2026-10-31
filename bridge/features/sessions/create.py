@@ -249,11 +249,21 @@ def _native_project(request, cwd, project):
     raise CreationUnavailable('电脑 App 项目与运行时尚未对应，请检查所用 Codex App 和运行时配置后重试')
 
 
-def create_empty(executable, codex_home, cwd, title, project=None):
+def creation_permission_settings(permission_mode=None):
+    """Explicit creation preference, independent of spoofable host hints."""
+    if permission_mode is None:
+        return {}
+    if permission_mode != 'full-access':
+        raise ValueError('新会话权限设置无效')
+    return {'permissions': ':danger-full-access', 'approvalPolicy': 'never', 'approvalsReviewer': 'user'}
+
+
+def create_empty(executable, codex_home, cwd, title, project=None, permission_mode=None):
+    permissions = creation_permission_settings(permission_mode)
     supported = project is not None and _native_project_support(executable, project.get('required', False))
     def create(request):
         project_id = _native_project(request, cwd, project) if supported else None
-        params = {'cwd': cwd, 'ephemeral': False}
+        params = {'cwd': cwd, 'ephemeral': False, **permissions}
         if project_id is not None:
             params['projectId'] = project_id
         result = request('thread/start', params)
@@ -262,6 +272,10 @@ def create_empty(executable, codex_home, cwd, title, project=None):
         if project_id is not None and result['thread'].get('projectId') != project_id:
             raise CreationError('聊天已创建但原生项目归属未确认，请检查电脑 App，不要重复创建')
         request('thread/name/set', {'threadId': thread_id, 'name': title})
+        if permissions:
+            # Naming materializes the empty thread. Only then can settings/update
+            # persist the start override for App takeover after this runtime exits.
+            request('thread/settings/update', {'threadId': thread_id, **permissions})
         saved = request('thread/read', {'threadId': thread_id, 'includeTurns': True})
         if project_id is not None and saved['thread'].get('projectId') != project_id:
             raise CreationError('聊天已创建但项目归属未持久化确认，请检查电脑 App，不要重复创建')

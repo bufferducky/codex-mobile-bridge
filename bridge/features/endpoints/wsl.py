@@ -23,7 +23,7 @@ from bridge.features.sessions.model import normalize_state, normalize_request, c
 from bridge.features.sessions.timeline import Timeline
 from bridge.features.sessions.store import StoreUnavailable
 from bridge.features.sessions.archive import ArchiveCommands
-from bridge.features.sessions.create import check_archive_runtime
+from bridge.features.sessions.create import check_archive_runtime, creation_permission_settings
 from bridge.features.sessions.pins import SessionPins
 from bridge.features.sessions.projects import Projects
 from bridge.features.endpoints.wsl_features import WslFeatures
@@ -730,7 +730,8 @@ class WslEntry(WslFeatures):
         return result
 
     @_entry_write
-    def create_chat(self, project_key, title, request_id):
+    def create_chat(self, project_key, title, request_id, permission_mode=None):
+        permissions = creation_permission_settings(permission_mode)
         if not isinstance(request_id, str):
             raise ValueError('创建请求标识无效')
         uuid.UUID(request_id)
@@ -743,7 +744,8 @@ class WslEntry(WslFeatures):
         with self.create_lock:
             receipt = self.creations.get(request_id)
             if receipt:
-                if receipt['project'] != project_key or receipt['title'] != title:
+                if (receipt['project'] != project_key or receipt['title'] != title
+                        or receipt.get('permissionMode') != permission_mode):
                     raise ValueError('同一创建请求不能用于不同内容')
                 if not receipt.get('id'):
                     raise IPCError('创建结果待核对，请先刷新聊天列表；不会重复创建')
@@ -762,11 +764,11 @@ class WslEntry(WslFeatures):
                     source += '\nprint(json.dumps(project_directory(**' + payload({'value': project['cwd'], 'expected': project.get('directoryIdentity')}) + ')))\n'
                 cwd = self.read(self.row['distribution'], source)['cwd']
                 proof = self._check_account_route(runtime, {'cwd': cwd}, new=True)
-                receipt = self.creations[request_id] = {'project': project_key, 'title': title, 'cwd': cwd}
+                receipt = self.creations[request_id] = {'project': project_key, 'title': title, 'cwd': cwd, 'permissionMode': permission_mode}
                 self.data_dir.mkdir(parents=True, exist_ok=True)
                 private_json(self.creations_path, self.creations)
                 try:
-                    created = runtime.request('thread/start', {'cwd': cwd, 'ephemeral': False})['thread']
+                    created = runtime.request('thread/start', {'cwd': cwd, 'ephemeral': False, **permissions})['thread']
                     identifier = created['id']
                     uuid.UUID(identifier)
                     if created.get('cwd') != cwd or created.get('parentThreadId'):
@@ -775,9 +777,11 @@ class WslEntry(WslFeatures):
                         if created.get('modelProvider') != proof[4]:
                             raise IPCError('新会话提供商与已选择的 WSL API 不一致')
                         self._managed_routes[identifier] = (*proof[:-1], created.get('model'))
+                    runtime.request('thread/name/set', {'threadId': identifier, 'name': title})
+                    if permissions:
+                        runtime.request('thread/settings/update', {'threadId': identifier, **permissions})
                     receipt['id'] = identifier
                     private_json(self.creations_path, self.creations)
-                    runtime.request('thread/name/set', {'threadId': identifier, 'name': title})
                     # Force durable empty-thread history before exposing it in lists.
                     runtime.request('thread/read', {'threadId': identifier, 'includeTurns': True})
                 except Exception:

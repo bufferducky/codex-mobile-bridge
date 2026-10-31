@@ -578,14 +578,25 @@ class WslSessionTests(unittest.TestCase):
                 self.entry.server.thread['id'] = created
                 return {'thread': copy.deepcopy(self.entry.server.thread)}
             if method == 'thread/name/set': return {}
+            if method == 'thread/settings/update':
+                self.entry.server.calls.append((method, copy.deepcopy(params)))
+                return {}
             return original(method, params)
         self.entry.server.request = request
         project = self.entry.host + '|/home/fixture/project'
         attempt = str(uuid.uuid4())
-        first = self.entry.create_chat(project, 'Mobile', attempt)
+        first = self.entry.create_chat(project, 'Mobile', attempt, permission_mode='full-access')
         self.assertEqual(first['id'], created)
-        self.assertEqual(self.entry.create_chat(project, 'Mobile', attempt)['id'], created)
+        self.assertEqual(self.entry.create_chat(project, 'Mobile', attempt, permission_mode='full-access')['id'], created)
         self.assertEqual(sum(m == 'thread/start' for m, _ in self.entry.server.calls), 1)
+        params = next(p for m, p in self.entry.server.calls if m == 'thread/start')
+        self.assertEqual(params['permissions'], ':danger-full-access')
+        self.assertEqual(params['approvalPolicy'], 'never')
+        self.assertEqual(params['approvalsReviewer'], 'user')
+        update = next(p for m, p in self.entry.server.calls if m == 'thread/settings/update')
+        self.assertEqual(update, {'threadId': created, 'permissions': ':danger-full-access',
+                                  'approvalPolicy': 'never', 'approvalsReviewer': 'user'})
+        with self.assertRaises(ValueError): self.entry.create_chat(project, 'Mobile', attempt)
         self.assertFalse(any(m == 'turn/start' for m, _ in self.entry.server.calls))
         with self.assertRaises(ValueError): self.entry.create_chat('local|independent', 'Mobile', str(uuid.uuid4()))
         with self.assertRaises(ValueError): self.entry.create_chat(project, 'Changed', attempt)

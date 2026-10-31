@@ -1,3 +1,35 @@
+<a id="v218"></a>
+
+## v2.1.8 · 补齐安卓新对话与侧边对话的完全访问权限
+
+修复个人版 v2.1.7 未包含此前本地权限修复的发布遗漏。桌面与手机版本为 **2.1.8**，Android/iOS 构建号 **41**。
+
+### 修复
+
+- Android 新建 Codex APP、本机/SSH CLI、WSL 会话时，明确提交完全访问偏好，网关转发至所选原生运行时。
+- 空会话创建并命名后，通过 `thread/settings/update` 持久化完全访问权限；关闭创建运行时后，重新打开仍保留设置。
+- Android 新建侧边对话默认使用完全访问，覆盖新子会话从主会话继承的受限默认值；保留主会话的模型、接入和原有权限。
+- 创建回执包含权限偏好，同一请求 ID 不能改成其他权限；未知创建结果不会自动重复创建。
+- 增加 Android / iOS / 浏览器创建请求、HTTP 认证与 CSRF、原生 APP/CLI/WSL 持久化及侧边对话隔离回归。使用独立临时 CODEX_HOME 的真实运行时验收，确认空会话重开后仍为完全访问；验收未启动模型任务。
+
+### 更新与范围
+
+**本修复主要位于 Mac/电脑网关。** 已安装正式 Android 2.1.7 的用户，更新桌面到 2.1.8 并刷新手机页面，即可让之后新建的对话使用新默认值；也可覆盖安装同签名 Android 2.1.8。
+
+更新 Mac 前，在 Bridge 中停止网关并完整退出 App，再覆盖安装并启动，避免旧进程继续使用旧代码。Android 正式版沿用 `io.github.bufferducky.codexbridge` 和原正式签名，保留电脑列表与有效绑定。
+
+变更仅作用于 Android 显式创建的新 Codex 会话与侧边对话；已有聊天、已有侧边对话和其他宿主保持原权限。运行时与管理员限制仍生效。
+
+### English
+
+Fix a release omission: v2.1.7 did not include the existing local Android full-access creation changes. Version **2.1.8**, mobile build **41**.
+
+Android explicitly requests full access for new Codex App/CLI/WSL chats and side chats. Persist named empty-thread permissions using `thread/settings/update` before handing the chat to another runtime. A new side chat receives the creation override without changing its parent. Creation receipts bind retries to the original permission choice.
+
+Update the desktop gateway to 2.1.8, fully quit/relaunch it and refresh Android's page. Android 2.1.7 can use this server-side fix; the signed 2.1.8 APK is also available as an in-place upgrade. Existing chats and other hosts retain their permissions. Native validation used an isolated CODEX_HOME, reopened empty chats and created a side chat without starting any model turns.
+
+---
+
 <a id="v217"></a>
 
 ## v2.1.7 · 个人发行版与安卓通知跳转修复

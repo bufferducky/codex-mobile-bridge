@@ -260,14 +260,15 @@ class CreationTests(unittest.TestCase):
                 'modelProvider': 'openai', 'turns': [], 'requests': []}) as created, \
              patch('bridge.app.service.open_in_desktop') as opened:
             request = str(uuid.uuid4())
-            first = self.bridge.create_chat(project['key'], 'CLI chat', request, kind='cli')
-            second = self.bridge.create_chat(project['key'], 'CLI chat', request, kind='cli')
+            first = self.bridge.create_chat(project['key'], 'CLI chat', request, kind='cli', permission_mode='full-access')
+            second = self.bridge.create_chat(project['key'], 'CLI chat', request, kind='cli', permission_mode='full-access')
             self.assertEqual(first['id'], self.tid)
             self.assertEqual(second['id'], self.tid)
             self.assertFalse(first['opened'])
             self.assertEqual(created.call_args.args, (cwd, 'CLI chat'))
             self.assertIn('on_start', created.call_args.kwargs)
             self.assertIn('on_created', created.call_args.kwargs)
+            self.assertEqual(created.call_args.kwargs['permission_mode'], 'full-access')
             opened.assert_not_called()
         with self.assertRaises(ValueError):
             self.bridge.create_chat(project['key'], 'CLI chat', request, kind='desktop')
@@ -298,6 +299,36 @@ class CreationTests(unittest.TestCase):
             self.assertNotIn('quoted " title $()',remote.call_args.args[1])
             self.assertIn('create_empty(runtime, home',remote.call_args.args[1])
             opened.assert_called_once_with(self.tid,host)
+
+    def test_full_access_creation_is_forwarded_persisted_and_retry_scoped(self):
+        request = str(uuid.uuid4())
+        with patch('bridge.app.service.create_empty', return_value=self.tid) as create, patch('bridge.app.service.open_in_desktop'):
+            self.bridge.create_chat('local|p', 'Full access', request, permission_mode='full-access')
+            self.bridge.create_chat('local|p', 'Full access', request, permission_mode='full-access')
+            self.assertEqual(create.call_count, 1)
+            self.assertEqual(create.call_args.kwargs['permission_mode'], 'full-access')
+            self.assertEqual(self.bridge.creations[request]['permissionMode'], 'full-access')
+            with self.assertRaises(ValueError):
+                self.bridge.create_chat('local|p', 'Full access', request)
+
+    def test_empty_runtime_receives_full_access_at_creation_without_starting_a_turn(self):
+        calls = []
+        def request(method, params):
+            calls.append((method, params))
+            return {'thread': {'id': self.tid}}
+        with patch('bridge.features.sessions.create._runtime_operation', side_effect=lambda a,b,c,run: run(request)):
+            create_empty('runtime', self.root, str(self.root), 'Full access', permission_mode='full-access')
+        self.assertEqual(calls[0], ('thread/start', {'cwd': str(self.root), 'ephemeral': False,
+            'permissions': ':danger-full-access', 'approvalPolicy': 'never', 'approvalsReviewer': 'user'}))
+        self.assertEqual(calls[1][0], 'thread/name/set')
+        self.assertEqual(calls[2], ('thread/settings/update', {'threadId': self.tid,
+            'permissions': ':danger-full-access', 'approvalPolicy': 'never', 'approvalsReviewer': 'user'}))
+        self.assertFalse(any(method == 'turn/start' for method, _ in calls))
+        with patch('bridge.features.sessions.create._runtime_operation') as runtime:
+            for mode in ('ask', '', False, {}):
+                with self.assertRaises(ValueError):
+                    create_empty('runtime', self.root, str(self.root), 'Invalid', permission_mode=mode)
+            runtime.assert_not_called()
 
     def test_runtime_only_initializes_creates_names_and_materializes(self):
         script=self.root/'runtime.py'

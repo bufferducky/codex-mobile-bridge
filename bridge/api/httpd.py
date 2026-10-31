@@ -897,12 +897,14 @@ class Handler(BaseHTTPRequestHandler):
                 entry = query.get('entry', ['desktop'])[0]
                 if self.server.desktop_sessions:
                     self.server.desktop_sessions.require_enabled(entry if entry.startswith('wsl:') else 'codex')
+                options = {'permission_mode': body['permissionMode']} if 'permissionMode' in body else {}
                 if entry != 'desktop':
                     return self.output(200, self.server.bridge.entries.get(entry).create_chat(
-                        body.get('project'), body.get('title'), body.get('id')))
+                        body.get('project'), body.get('title'), body.get('id'), **options))
                 fields = (body.get('project'), body.get('title'), body.get('id'))
-                result = (self.server.bridge.create_chat(*fields, kind=body['kind']) if 'kind' in body
-                          else self.server.bridge.create_chat(*fields))
+                if 'kind' in body:
+                    options['kind'] = body['kind']
+                result = self.server.bridge.create_chat(*fields, **options)
                 return self.output(200, result)
             if path == '/api/notifications/defaults':
                 if self.server.notifications is None:
@@ -1010,7 +1012,7 @@ class Handler(BaseHTTPRequestHandler):
                 owner = self.server.auth.key(self.token())
                 body = self.read_json() if write else {}
                 action = body.get('action') if write else 'read'
-                fields = {'create': {'action', 'creationId'}, 'send': {'action', 'id', 'text', 'submissionId', 'attachments', 'skills', 'mode', 'workMode'},
+                fields = {'create': {'action', 'creationId', 'permissionMode'}, 'send': {'action', 'id', 'text', 'submissionId', 'attachments', 'skills', 'mode', 'workMode'},
                           'catalog': {'action', 'id'}, 'skills': {'action', 'id', 'query', 'offset', 'refresh', 'selected'},
                           'linux-permission-options': {'action', 'id'},
                           'permissions': {'action', 'id', 'preset', 'confirmed'}, 'cancel-queued': {'action', 'id', 'submissionId'}, 'settings': {'action', 'id', 'model', 'effort'},

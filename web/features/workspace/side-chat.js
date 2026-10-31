@@ -149,7 +149,7 @@ class SideChatPanel {
   async load(){try{this.apply(await this.request());}catch(e){if(!this.disposed){this.status.textContent=BridgeI18n.t(e.message);if(this.state)this.state.connected=false;this.controls();}}}
   async create(){
     if(this.busy)return;this.busy=true;this.controls();this.status.textContent=BridgeI18n.t('正在创建临时侧边聊天…');
-    try{this.apply(await this.request({action:'create',creationId:this.creationId}));}
+    try{this.apply(await this.request({action:'create',creationId:this.creationId,...(BridgeHost.kind()==='android'?{permissionMode:'full-access'}:{})}));}
     catch(e){if(!this.disposed)this.status.textContent=BridgeI18n.t(e.message);}
     finally{this.busy=false;this.controls();}
   }

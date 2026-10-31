@@ -6,7 +6,7 @@ const environmentsCode=section("let codexAccountEntry='desktop'",'clientNavigati
 const creationCode=section('let newChatProjects=[]','const messageActions=');
 const accountCode=section("const codexCliRoot=el('div');",'window.BridgeNavigation=');
 const ubuntu='wsl:'+'a'.repeat(32),debian='wsl:'+'b'.repeat(32),disabled='wsl:'+'c'.repeat(32);
-function fixture({native=true,listSource='all',host='local',wslSupported=true}={}){
+function fixture({native=true,listSource='all',host='local',wslSupported=true,hostKind='browser'}={}){
  const nodes=new Map(),calls=[],opened=[],store=new Map(),notices=[];
  function node(tag='div'){
   let value='';const n={tagName:tag.toUpperCase(),children:[],dataset:{},textContent:'',hidden:false,disabled:false,checked:false,open:false,
@@ -28,7 +28,7 @@ function fixture({native=true,listSource='all',host='local',wslSupported=true}={
  class CliAccessPanel{constructor(options){Object.assign(this,options);this.clears=0;this.refreshes=0;}clear(){this.clears++;}refresh(){this.refreshes++;return this.read();}}
  class WslAccountsPanel{constructor(options){Object.assign(this,options);}clear(){}select(entry){this.entry=entry;return this.read(entry);}}
  const close=node('button'),context=vm.createContext({$,api,Option,AccountsPanel,CliAccessPanel,WslAccountsPanel,URL,Event:class{constructor(type){this.type=type;}},window:{BridgeFeatures:{load:async name=>{calls.push({feature:name});}}},BridgeI18n:{t:value=>value,locale:()=> 'zh'},document:{getElementById:$,createElement:node,querySelector:()=>close},
-  t:value=>value,el:(tag,_class='',text='')=>Object.assign(node(tag),{textContent:text}),
+  BridgeHost:{kind:()=>hostKind},t:value=>value,el:(tag,_class='',text='')=>Object.assign(node(tag),{textContent:text}),
   clientNavigation:{wslSupported,provider:'codex',clients:[{id:'codex',entries}]},currentHost:host,currentId:null,listSource,listRows:[],
   renderSourceFilter(){},uuid:()=> '11111111-1111-4111-8111-111111111111',setLanguageBusy(){},loadList:async()=>{},openChat:async(id,where)=>opened.push({id,host:where}),toast:message=>notices.push(message),isCodexClient:id=>id==='codex',
   sessionStorage:{getItem:key=>store.get(key)||null,setItem:(key,value)=>store.set(key,value),removeItem:key=>store.delete(key)}});
@@ -136,4 +136,29 @@ test('non-Windows gateway omits WSL form controls and does not load or query WSL
  const ui=fixture({wslSupported:false,listSource:'wsl'});await ui.$('new-chat').onclick();ui.run('openCurrentAccounts()');await new Promise(setImmediate);
  assert.equal(ui.$('new-chat-type').options.some(option=>option.value==='wsl'),false);assert.equal(ui.run('accountEntryControls'),null);assert.equal(ui.run('codexWslAccounts'),null);
  assert.equal(ui.calls.some(call=>call.feature==='wsl'||call.url?.includes('wsl')||call.url?.includes('entry=')),false);
+});
+
+
+test('Android creates APP, CLI and WSL chats with full access; other hosts retain defaults',async()=>{
+ for(const hostKind of ['android','ios','browser'])for(const listSource of ['desktop','cli','wsl']){
+  const ui=fixture({hostKind,listSource});
+  ui.setHandler((url,body)=>url.startsWith('/api/projects')?{projects:[],environments:[{key:listSource+'|local',host:'local',type:listSource}]}:{id:'created',host:'local'});
+  await ui.$('new-chat').onclick();
+  if(listSource==='cli')ui.$('new-chat-project').value='fixture-cli-project';
+  ui.$('new-chat-title').value='New chat';
+  await ui.$('new-chat-form').onsubmit({preventDefault(){}});
+  const write=ui.calls.find(call=>call.url.startsWith('/api/sessions'));
+  assert.ok(write,hostKind+' '+listSource);
+  assert.equal(write.body.permissionMode,hostKind==='android'?'full-access':undefined);
+ }
+});
+
+test('Android creation retries keep the same permission choice and request id',async()=>{
+ const ui=fixture({hostKind:'android'});await ui.$('new-chat').onclick();ui.$('new-chat-title').value='Retry';
+ ui.setHandler(()=>{throw Error('Unknown result');});
+ await ui.$('new-chat-form').onsubmit({preventDefault(){}});
+ await ui.$('new-chat-form').onsubmit({preventDefault(){}});
+ const writes=ui.calls.filter(call=>call.url.startsWith('/api/sessions'));
+ assert.equal(writes.length,2);assert.deepEqual(writes[0].body,writes[1].body);
+ assert.equal(writes[0].body.permissionMode,'full-access');
 });
