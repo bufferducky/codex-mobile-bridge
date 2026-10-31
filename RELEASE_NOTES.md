@@ -1,3 +1,27 @@
+<a id="v2111"></a>
+
+## v2.1.11 · 修复安卓退后台后的完成通知丢失
+
+桌面与手机版本 **2.1.11**，手机构建号 **44**。本次提供 **Mac Apple Silicon / Intel 和 Android**，沿用现有签名和正式包名。建议启用智能手机提醒的用户更新 Mac 网关，再刷新 Android 的电脑连接页面。
+
+### 修复
+
+- **Mac 锁屏、安卓退后台后漏通知**：此前 Android 在暂停前的状态清除请求可能因系统挂起或网络丢失未送达。若任务在剩余的 25 秒前台租约内完成，2.1.10 会直接将通知永久标为跳过，租约过期后也不恢复。本版保留未确认查看的完成通知，在前台状态清除、过期或网关重启后正常投递。
+- **前台状态与结果查看分开判断**：只在当前可见、已连接、非缓存的聊天页面加载并渲染对应完成轮次后发送明确确认；仅凭此前打开过聊天不再丢弃新结果。已确认查看的完成通知仍不补发，确认按登录、主机、聊天和轮次隔离。
+- **保留原约定**：Mac 活跃时手机静默，锁屏或闲置 3 分钟后恢复；审批与提问在 Mac 活跃时等待 30 秒；检测失败时正常推送。安全、入口、手动测试及其他独立通道不变。
+
+### 验证与使用
+
+新增回归模拟 Mac 锁屏、Android 退后台时清除丢失、任务在旧租约内完成、租约过期、网关重启及已查看确认，分别验证正常投递、一次投递和不积压补发。手机页面测试确认仅上报已加载轮次，退后台和缓存页面不会确认新结果。安装包与更新资产另校验签名和完整性；真实 ntfy 到达由升级后真机验收。
+
+更新后开启 **消息通知 → 智能手机提醒**。本次主要修复位于网关和随网关提供的手机页面，Android 2.1.10 原生前后台接口可继续使用；也提供同签名 2.1.11 APK 供覆盖升级。修复只保护后续事件，不补发此前已经永久跳过的历史通知。
+
+### English
+
+Fix lost completion pushes when an Android foreground lease outlives the app entering the background. Unconfirmed completions now remain pending until the lease clears or expires, including after a gateway restart. Only explicit receipts for completed turns loaded in a visible, connected, non-cached chat can permanently suppress a phone push. Preserve the 3-minute desktop idle threshold, 30-second approval delay and existing signing identities. Ships macOS arm64/x64 and Android, mobile build 44. Update the Mac gateway and reload Android's connected page; physical device acceptance follows installation.
+
+---
+
 <a id="v2110"></a>
 
 ## v2.1.10 · Mac 与安卓协同的智能手机提醒

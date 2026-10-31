@@ -885,10 +885,19 @@ class Notifications:
         if config.get('smartNotifications') and channel in ('ntfy', 'bark', 'pushplus'):
             viewing = self.attention.viewing(row)
             active = self.attention.desktop_active() is True
-            if completed and (viewing or active):
-                for key in pending:
+            if completed:
+                # A lease can survive Android's pause callback. Only an explicit
+                # receipt for a rendered completed turn may permanently skip it.
+                record = self.completions.get(self._completion_key(row['host'], row['id'], target), {})
+                seen = {self._delivery_key(row, turn, completion=True, target=target)
+                        for turn in record.get('pending', []) if self.attention.seen_completion(row, turn)}
+                skipped = [key for key in pending if active or key in seen]
+                for key in skipped:
                     self.ledger[key] = {'delivered': True, 'suppressed': True, 'time': now}
-                return True  # Persist the terminal decision; never replay on unlock/restart.
+                changed = bool(skipped)
+                pending = [key for key in pending if key not in skipped]
+                if viewing or not pending:
+                    return changed  # Unconfirmed completions survive until the lease clears/expires.
             if not completed:
                 for key in pending:
                     record = self.ledger.setdefault(key, {})

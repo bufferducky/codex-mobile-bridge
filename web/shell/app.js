@@ -9,7 +9,7 @@ function createNotificationPresence({read, send, newId, enabled=()=>true, schedu
     if(!route&&!advertised){if(enabled())timer=schedule(refresh,10000);return;}
     if(!viewer)viewer=newId();
     advertised=!!route;busy=true;
-    try{await send({viewer,thread:route?.id||'',host:route?.host||''});}catch{/* An expired lease restores ordinary push. */}
+    try{await send({viewer,thread:route?.id||'',host:route?.host||'',...(route?.completed?.length?{completed:route.completed}:{})});}catch{/* An expired lease restores ordinary push. */}
     finally{busy=false;if(queued){queued=false;refresh();}else if(enabled()||advertised)timer=schedule(refresh,10000);}
   }
   return {refresh};
@@ -121,7 +121,12 @@ const notificationPresence=createNotificationPresence({
   enabled:()=>BridgeHost.kind()==='android'&&!!csrf&&!$('app').hidden&&!document.hidden&&window.BridgeNativeForeground!==false,
   read:()=>{
     if(BridgeHost.kind()!=='android'||!csrf||$('app').hidden||document.hidden||window.BridgeNativeForeground===false)return null;
-    if(isCodexClient(clientNavigation.provider))return currentId&&$('app').classList.contains('chat-open')&&!workbench.isFileVisible?{id:currentId,host:currentHost}:null;
+    if(isCodexClient(clientNavigation.provider)){
+      if(!currentId||!$('app').classList.contains('chat-open')||workbench.isFileVisible)return null;
+      const completed=state?.connected&&chatTimeline&&!chatTimeline.cached?
+        [...new Set([...chatTimeline.rows.values()].map(value=>value.row).filter(row=>row.turnStatus==='completed'&&chatTimeline.nodes.has(row.key)).map(row=>row.turnId).filter(Boolean))].slice(-64):[];
+      return {id:currentId,host:currentHost,completed};
+    }
     return desktopSessions.visibleActivity()?{id:desktopSessions.sid,host:'desktop:'+desktopSessions.provider}:null;
   },
   newId:uuid,

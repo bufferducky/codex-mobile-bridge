@@ -147,7 +147,7 @@ class AttentionNotificationTests(unittest.TestCase):
     def setUp(self):
         ActiveNotificationsTests.setUp(self)
         save_settings(self.directory, {'smartNotifications': True})
-        self.manager.attention = SimpleNamespace(desktop_active=lambda: True, viewing=lambda row: False)
+        self.manager.attention = SimpleNamespace(desktop_active=lambda: True, viewing=lambda row: False, seen_completion=lambda row, turn: False)
 
     def test_active_mac_completion_is_not_pushed_or_replayed_after_leaving(self):
         self.session.state['turns'][-1]['status'] = 'inProgress'
@@ -172,6 +172,39 @@ class AttentionNotificationTests(unittest.TestCase):
             now.return_value = 1030
             self.manager.scan(); send.assert_called_once()
             self.manager.scan(); send.assert_called_once()
+
+    def test_locked_mac_completion_after_android_clear_is_sent_after_restart(self):
+        from bridge.features.notifications.attention import Attention
+        self.manager.attention = Attention()
+        self.manager.attention.desktop_active = lambda: False
+        self.session.state['turns'][-1]['status'] = 'inProgress'
+        body = {'viewer': 'a'*32, 'host': 'local', 'thread': THREAD}
+        with patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.attention.update('owner', body)
+            self.manager.scan()
+            self.session.state['turns'][-1]['status'] = 'completed'
+            self.manager.scan(); send.assert_not_called()
+            restarted = Notifications(self.source, self.directory)
+            restarted.attention.desktop_active = lambda: False
+            restarted.scan(); send.assert_called_once()
+
+    def test_only_confirmed_completed_turns_are_skipped_when_android_leaves(self):
+        from bridge.features.notifications.attention import Attention
+        self.manager.attention = Attention()
+        self.manager.attention.desktop_active = lambda: False
+        self.session.state['turns'][-1]['status'] = 'inProgress'
+        body = {'viewer': 'a'*32, 'host': 'local', 'thread': THREAD}
+        with patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.attention.update('owner', body)
+            self.manager.scan()
+            self.session.state['turns'][-1]['status'] = 'completed'
+            self.manager.scan(); send.assert_not_called()
+            self.manager.attention.update('owner', {**body, 'completed': ['old']})
+            self.manager.attention.update('owner', {**body, 'host': '', 'thread': ''})
+            self.manager.scan(); send.assert_not_called()
+            restarted = Notifications(self.source, self.directory)
+            restarted.attention.desktop_active = lambda: False
+            restarted.scan(); send.assert_not_called()
 
     def test_questions_have_independent_thirty_second_deadlines(self):
         self.session.state['requests'] = [{'id': 'first', 'method': 'item/tool/requestUserInput', 'params': {}}]
@@ -230,6 +263,8 @@ class AttentionNotificationTests(unittest.TestCase):
             self.session.state['turns'][-1]['status'] = 'completed'
             self.manager.scan(); send.assert_not_called()
             self.assertEqual(len(self.manager.mobile.read()['events']), 1)
+            self.manager.attention.seen_completion = lambda row, turn: True
+            self.manager.scan(); send.assert_not_called()
             self.manager.attention.viewing = lambda row: False
             self.rediscover(); self.manager.scan(); send.assert_not_called()
 
@@ -239,6 +274,25 @@ class AttentionNotificationTests(unittest.TestCase):
         with patch('bridge.features.notifications.channels.publish') as send:
             self.manager.scan()
             self.session.state['turns'][-1]['status'] = 'completed'
+            self.manager.scan(); send.assert_called_once()
+
+    def test_locked_mac_completion_after_android_background_survives_stale_lease(self):
+        from bridge.features.notifications.attention import Attention
+        self.manager.attention = Attention()
+        self.manager.attention.desktop_active = lambda: False
+        self.session.state['turns'][-1]['status'] = 'inProgress'
+        with patch('bridge.features.notifications.channels.time.time', return_value=1000) as now, \
+                patch('bridge.features.notifications.attention.time.monotonic', return_value=100) as monotonic, \
+                patch('bridge.features.notifications.channels.publish') as send:
+            self.manager.attention.update('owner', {'viewer': 'a'*32, 'host': 'local', 'thread': THREAD})
+            self.manager.scan()
+            # Android has entered the background; its final clear may be suspended
+            # or lost. The response arrives before the last foreground lease expires.
+            now.return_value = 1002; monotonic.return_value = 102
+            self.session.state['turns'][-1]['status'] = 'completed'
+            self.manager.scan(); send.assert_not_called()
+            now.return_value = 1026; monotonic.return_value = 126
+            self.manager.scan(); send.assert_called_once()
             self.manager.scan(); send.assert_called_once()
 
     def test_restart_preserves_approval_age_and_retry_does_not_restart_delay(self):

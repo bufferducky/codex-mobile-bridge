@@ -68,6 +68,36 @@ class ForegroundLeaseTests(unittest.TestCase):
             with patch('bridge.features.notifications.attention.sys.platform', platform):
                 self.assertIsNone(self.attention.desktop_active())
 
+    def test_foreground_lease_alone_is_not_a_completion_receipt(self):
+        self.attention.update('owner', self.body)
+        self.assertTrue(self.attention.viewing(self.row))
+        self.assertFalse(self.attention.seen_completion(self.row, 'turn'))
+        self.attention.update('owner', {**self.body, 'completed': ['turn']})
+        self.assertTrue(self.attention.seen_completion(self.row, 'turn'))
+        self.assertFalse(self.attention.seen_completion({**self.row, 'host': 'remote'}, 'turn'))
+        self.assertFalse(self.attention.seen_completion(self.row, 'other'))
+        self.attention.update('owner', {**self.body, 'host': '', 'thread': ''})
+        self.assertFalse(self.attention.viewing(self.row))
+        self.assertTrue(self.attention.seen_completion(self.row, 'turn'))
+
+    def test_receipt_expiry_and_revoked_login_do_not_silence_unseen_results(self):
+        valid = Mock(return_value=True)
+        with patch('bridge.features.notifications.attention.time.monotonic', return_value=100) as now:
+            self.attention.update('owner', {**self.body, 'completed': ['turn']}, valid)
+            valid.return_value = False
+            self.assertFalse(self.attention.seen_completion(self.row, 'turn'))
+            valid.return_value = True
+            self.attention.update('owner', {**self.body, 'completed': ['turn']}, valid)
+            now.return_value = 401
+            self.assertFalse(self.attention.seen_completion(self.row, 'turn'))
+
+    def test_completion_receipts_are_bounded_and_require_a_chat(self):
+        for completed in ('turn', [1], [''], ['x'*257], ['turn']*65):
+            with self.subTest(completed=completed), self.assertRaises(ValueError):
+                self.attention.update('owner', {**self.body, 'completed': completed})
+        with self.assertRaises(ValueError):
+            self.attention.update('owner', {**self.body, 'host': '', 'thread': '', 'completed': ['turn']})
+
 
 class MacAttentionTests(unittest.TestCase):
     def native(self, *, console=1, logged_in=1, locked=None, idle=0, session=42):

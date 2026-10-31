@@ -34,3 +34,9 @@ test('failed foreground writes retry on the next heartbeat and ordinary browsers
   f.setSend(async()=>{});await f.tick();assert.equal(f.writes.length,2);
   const browser=fixture();browser.setEnabled(false);await browser.presence.refresh();assert.equal(browser.writes.length,0);
 });
+test('completion receipts only accompany a currently visible chat, never its background clear',async()=>{
+  const f=fixture();f.setRoute({id:'chat-a',host:'local',completed:['rendered-turn']});
+  await f.presence.refresh();assert.deepEqual(f.writes[0].completed,['rendered-turn']);
+  f.setEnabled(false);await f.presence.refresh();
+  assert.equal(f.writes[1].thread,'');assert.equal(f.writes[1].completed,undefined);
+});

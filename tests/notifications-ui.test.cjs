@@ -83,6 +83,30 @@ test('homepage retains the v1.3 archive checkbox and complete mode labels',async
   for(const text of ['最近交互','按项目','发送新消息','完成后发送','补充当前任务','普通模式','计划模式','目标模式'])assert.ok(ui.html.includes(text));
 });
 
+test('Android presence acknowledges loaded completions and never acknowledges results after backgrounding',async()=>{
+  const ui=await fixture({skipStartup:true});
+  await ui.run(`
+    globalThis.crypto={getRandomValues:bytes=>bytes.fill(1)};
+    globalThis.AbortController=class{constructor(){this.signal={};}abort(){}};
+    navigator.userAgent='BridgeMobile/2.1.11-Android';
+    csrf='synthetic-csrf';currentId='chat-a';currentHost='local';state={connected:true};
+    $('app').hidden=false;$('app').classList.contains=()=>true;
+    chatTimeline={cached:false,rows:new Map([
+      ['loaded',{row:{key:'loaded',turnId:'seen-turn',turnStatus:'completed'}}],
+      ['unrendered',{row:{key:'unrendered',turnId:'unseen-turn',turnStatus:'completed'}}],
+      ['running',{row:{key:'running',turnId:'running-turn',turnStatus:'inProgress'}}]
+    ]),nodes:new Map([['loaded',{}],['running',{}]])};
+    window.presenceWrites=[];fetch=async(url,options)=>{window.presenceWrites.push(JSON.parse(options.body));};
+    notificationPresence.refresh();
+  `);
+  assert.deepEqual(JSON.parse(ui.run('JSON.stringify(window.presenceWrites[0].completed)')),['seen-turn']);
+  await ui.run('chatTimeline.cached=true;notificationPresence.refresh();');
+  assert.equal(ui.run('window.presenceWrites[1].completed'),undefined);
+  await ui.run('chatTimeline.cached=false;window.BridgeNativeForeground=false;notificationPresence.refresh();');
+  assert.equal(ui.run('window.presenceWrites[2].thread'),'');
+  assert.equal(ui.run('window.presenceWrites[2].completed'),undefined);
+});
+
 test('request and completion choices are independent and persist',async()=>{
   const ui=await fixture();await ui.open();await ui.settings();
   assert.equal(ui.nodes.get('notify-completion').value,'inherit');
