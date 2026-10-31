@@ -93,6 +93,7 @@ class LiveSession:
         self.viewers = 0
         self.watched = False
         self.notification_probe_until = 0
+        self.notification_attaching = False
         self.activity_only = False
         self.touched = time.monotonic()
         self.condition = threading.Condition(threading.RLock())
@@ -244,6 +245,7 @@ class Bridge:
         self.notification_dirty = set()
         self.notification_boundary = set()
         self.notification_event = threading.Event()
+        self.notification_cli_slots = threading.BoundedSemaphore(4)
         self.store = RemoteStore(alias) if alias else SessionStore(codex_home)
         self.catalog_reader = RemoteCatalog(alias) if alias else Catalog(codex_home, codex_bin)
         self.terminals = TerminalManager()
@@ -1432,9 +1434,32 @@ class Bridge:
         if not session.watched:
             session.notification_probe_until = time.monotonic() + 10
         session.watched = True
+        self._load_session_origin(session)
         if not session.connected and time.monotonic() >= session.retry_at:
-            session.retry_at = time.monotonic() + 15
-            self._attach(session, timeout=0)
+            if session.origin == 'cli':
+                # Owner discovery can wait six seconds for a closed CLI chat.
+                # Keep these passive probes out of the single notification scan,
+                # and bound their concurrency instead of spawning per old chat.
+                with session.condition:
+                    if session.notification_attaching or session.connected or time.monotonic() < session.retry_at:
+                        return session
+                    if not self.notification_cli_slots.acquire(blocking=False):
+                        session.notification_probe_until = time.monotonic() + 10
+                        return session
+                    session.notification_attaching = True
+                    session.retry_at = time.monotonic() + 15
+                def attach():
+                    try:
+                        self._attach(session, timeout=0)
+                    finally:
+                        with session.condition:
+                            session.notification_attaching = False
+                        self.notification_cli_slots.release()
+                        self.notification_event.set()
+                threading.Thread(target=attach, name='notification-cli-probe', daemon=True).start()
+            else:
+                session.retry_at = time.monotonic() + 15
+                self._attach(session, timeout=0)
         return session
 
     def upload(self, thread_id, identifier, name, data):
@@ -1857,9 +1882,7 @@ class Bridge:
                         pass  # Unknown outcomes stay recorded and are never automatically replayed.
                 if (session.viewers > 0 or queued or session.watched) and not session.connected:
                     if session.activity_only and session.viewers == 0 and not queued:
-                        if time.monotonic() >= session.retry_at:
-                            session.retry_at = time.monotonic() + 15
-                            self._attach(session, timeout=0)
+                        self.notification_session(session.id)
                     else:
                         self._refresh_async(session)
                 elif session.viewers == 0 and not queued and not session.watched and time.monotonic() - session.touched > 300:

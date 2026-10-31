@@ -1,4 +1,4 @@
-> **个人发行版**：从 [bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases) 下载本分支安装包。当前版本 **2.1.11**；后续应用更新指向本仓库。Android 正式版与 Dev 共存，Mac 首次手动覆盖安装。参见 [v2.1.11 更新说明](RELEASE_NOTES.md#v2111)。以下历史说明保留原项目来源。
+> **个人发行版**：从 [bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases) 下载本分支安装包。当前版本 **2.1.12**；后续应用更新指向本仓库。Android 正式版与 Dev 共存，Mac 首次手动覆盖安装。参见 [v2.1.12 更新说明](RELEASE_NOTES.md#v2112)。以下历史说明保留原项目来源。
 
 <p align="center">
 

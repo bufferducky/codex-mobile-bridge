@@ -1,3 +1,28 @@
+<a id="v2112"></a>
+
+## v2.1.12 · 修复旧 CLI 会话阻塞完成通知扫描
+
+桌面与手机版本 **2.1.12**，手机构建号 **45**。本次提供 **Mac Apple Silicon / Intel 和 Android**，沿用现有签名。主要修复位于电脑网关，Android 2.1.10/2.1.11 可以继续使用，重新打开电脑连接即可加载共享页面。
+
+### 已定位的根因与修复
+
+- **旧 CLI 探测阻塞整轮通知扫描**：全会话提醒会枚举历史聊天，原扫描逐条同步等待 CLI owner discovery。没有运行 owner 的旧聊天可能每条等待约 6 秒，导致后面的手机聊天迟迟无法建立完成基线；新任务即使已完成，也还没有进入静默判断和推送阶段。此前 2.1.10/2.1.11 对安卓前台状态的调整无法解决这一阻塞。
+- **有并发上限的被动探测**：旧 CLI owner 探测改为每个 Bridge 最多 4 个后台探测，同一会话不重复排队；桌面聊天和已经连接的手机聊天继续及时扫描。维护线程复用同一调度入口，保持并发上限。不启动或恢复旧 CLI，不切换桌面聊天，不重放用户操作。
+- **保留原提醒规则**：Mac 活跃时静默、锁屏/闲置 3 分钟恢复、待确认请求等待 30 秒、Android 前台租约和明确完成查看确认继续生效；被动探测和发送仍遵守原会话 owner 与通知策略。
+- **扫描状态可诊断**：通知状态文件增加扫描起止、耗时、候选数量与订阅数量，方便区分扫描堵塞、未捕获完成、静默和通道发送问题。
+
+### 验证与使用
+
+使用真实会话库复现了扫描被旧 CLI owner 请求阻塞、尚未抵达目标手机聊天的情况；修复后，同一数据的扫描能够及时完成，并为目标聊天建立完成监控。回归测试使用真实 Bridge/IPC 夹具，验证慢旧 CLI 不阻塞手机聊天完成事件，24 条旧 CLI 的被动探测仍受 4 个并发限制，且不会激活聊天。
+
+现场已确认 ntfy 的待确认提醒能到达手机；这不等同于目标聊天的完成提醒真机验收。升级 Mac 网关后，需要用一条新任务继续核验锁屏、安卓退后台和完成通知。不会把此前没有建立完成基线的历史任务全部补发。
+
+### English
+
+Fix notification scans stalled behind sequential owner discovery for old CLI chats. Each missing owner could delay the single scan by about six seconds, preventing later live phone chats from establishing their completion boundary. Run these passive probes in at most four background workers per Bridge, deduplicate per session, and use the same scheduler from maintenance. Do not resume CLI sessions, activate desktop chats or replay operations. Preserve existing smart alert policies and add scan timing/count diagnostics. Real-data scans and native IPC fixtures verify the blocking fix; successful approval delivery is recorded separately from physical-device completion acceptance. Update the Mac gateway; existing Android 2.1.10/2.1.11 apps remain compatible.
+
+---
+
 <a id="v2111"></a>
 
 ## v2.1.11 · 修复安卓退后台后的完成通知丢失

@@ -3,6 +3,7 @@ from contextlib import closing
 import sqlite3
 import tempfile
 import time
+import threading
 import unittest
 from types import SimpleNamespace
 from pathlib import Path
@@ -11,6 +12,7 @@ from unittest.mock import patch
 from bridge.features.notifications.channels import Notifications, save_settings
 from bridge.app.service import LiveSession
 from bridge.features.sessions.store import SessionStore
+from bridge.clients.codex.ipc import IPCError
 import test_bridge as support
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -320,6 +322,69 @@ class AttentionNotificationTests(unittest.TestCase):
 class DiscoveryTests(unittest.TestCase):
     setUp = support.IntegrationTests.setUp
     tearDown = support.IntegrationTests.tearDown
+
+    def test_slow_old_cli_owner_cannot_block_live_desktop_completion_monitor(self):
+        with closing(sqlite3.connect(self.root/'state_5.sqlite')) as db, db:
+            db.execute("INSERT INTO threads SELECT ?,title,cwd,updated_at,archived,'codex-tui','cli',rollout_path FROM threads WHERE id=?", (THREAD, support.THREAD))
+        self.fixture.state['turns'] = [{'turnId': 'live', 'status': 'inProgress'}]
+        desktop = self.bridge.notification_session(support.THREAD)
+        with desktop.condition:
+            self.assertTrue(desktop.condition.wait_for(lambda: desktop.connected, timeout=2))
+        manager = Notifications(self.bridge, self.root/'notifier')
+        save_settings(manager.data_dir, {'enabled': True, 'topic': 'synthetic'})
+        manager.defaults({'requests': True, 'completion': True})
+        manager.discovery_at = float('inf')
+        manager.candidates = {('local', identifier): {'host': 'local', 'id': identifier} for identifier in [THREAD, support.THREAD]}
+        blocked, release = threading.Event(), threading.Event()
+        def slow_owner(*args, **kwargs):
+            blocked.set(); release.wait(3)
+            raise IPCError('no-client-found')
+        finished = threading.Event()
+        def scan():
+            try: manager.scan()
+            finally: finished.set()
+        worker = threading.Thread(target=scan, daemon=True)
+        with patch.object(self.bridge.ipc, 'owner', side_effect=slow_owner), patch('bridge.features.notifications.channels.publish') as send:
+            worker.start()
+            try:
+                self.assertTrue(blocked.wait(1))
+                self.assertTrue(finished.wait(.5), 'An old CLI owner lookup blocked the entire notification scan before it reached the live phone chat')
+                self.assertTrue(any(json.loads(key)[:2] == ['local', support.THREAD] for key in manager.completions))
+                with desktop.condition:
+                    desktop.state['turns'][-1]['status'] = 'completed'
+                manager.scan(); send.assert_called_once()
+            finally:
+                release.set(); worker.join(4); manager.close()
+
+    def test_old_cli_notification_probes_are_bounded_and_do_not_activate_chats(self):
+        identifiers = [f'22222222-2222-4222-8222-{index:012x}' for index in range(24)]
+        with closing(sqlite3.connect(self.root/'state_5.sqlite')) as db, db:
+            for identifier in identifiers:
+                db.execute("INSERT INTO threads SELECT ?,title,cwd,updated_at,archived,'codex-tui','cli',rollout_path FROM threads WHERE id=?", (identifier, support.THREAD))
+        release, four_started = threading.Event(), threading.Event()
+        lock = threading.Lock()
+        started = []
+        def slow_owner(identifier, **kwargs):
+            with lock:
+                started.append(identifier)
+                if len(started) == 4: four_started.set()
+            release.wait(3)
+            raise IPCError('no-client-found')
+        with patch.object(self.bridge.ipc, 'owner', side_effect=slow_owner), \
+                patch.object(self.bridge, 'activate', side_effect=AssertionError('Notification must not activate a chat')):
+            try:
+                for identifier in identifiers:
+                    self.bridge.notification_session(identifier)
+                    self.bridge.notification_session(identifier)
+                self.assertTrue(four_started.wait(1))
+                self.assertEqual(len(started), 4)
+                self.assertEqual(len(set(started)), 4)
+            finally:
+                release.set()
+                deadline = time.monotonic()+2
+                while any(session.notification_attaching for session in self.bridge.live.values()) and time.monotonic()<deadline:
+                    time.sleep(.01)
+        self.assertFalse(any(session.notification_attaching for session in self.bridge.live.values()))
 
     def test_incremental_discovery_and_equal_timestamp_new_thread(self):
         first = self.bridge.notification_candidates()

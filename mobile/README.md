@@ -1,6 +1,6 @@
-# 个人发行版 v2.1.11
+# 个人发行版 v2.1.12
 
-下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，与 Dev 共存；版本 2.1.11、构建号 44。首次需要添加电脑，后续保留签名覆盖安装。通知、权限修复和迁移说明见 [更新说明](../RELEASE_NOTES.md#v2111)。
+下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，与 Dev 共存；版本 2.1.12、构建号 45。首次需要添加电脑，后续保留签名覆盖安装。通知、权限修复和迁移说明见 [更新说明](../RELEASE_NOTES.md#v2112)。
 
 # Android 与 iOS App
 

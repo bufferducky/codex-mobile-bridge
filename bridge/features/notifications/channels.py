@@ -938,6 +938,8 @@ class Notifications:
         return True
 
     def scan(self):
+        started = time.monotonic()
+        self._status(scanStartedAt=time.time())
         config = settings(self.data_dir)
         targets = self._targets(config)
         signature = tuple(sorted(targets.items()))
@@ -1042,6 +1044,8 @@ class Notifications:
             if len(self.ledger) > 5000:
                 self.ledger = dict(sorted(self.ledger.items(), key=lambda p: p[1].get('time', 0))[-4000:])
             write_json(self.data_dir/'notification-delivery.json', self.ledger)
+        self._status(scanFinishedAt=time.time(), scanDurationMs=round((time.monotonic()-started)*1000),
+                     scanCandidates=len(self.candidates), scanAttached=len(self.attached))
 
     def _scan_desktops(self, config, targets):
         manager = self.desktop_sessions
