@@ -26,6 +26,23 @@ test('temporarily missing turn history does not resurrect a read completion',()=
  a.update([{id:'a',host:'local',connected:true,status:'idle',turnId:null,turnStatus:null}]);
  a.update([status('a','local','idle')]);assert.equal(a.indicator('local|a'),null);
 });
+test('a viewed idle chat does not acquire an unread-looking dot when its live connection expires',()=>{
+ const saved=storage(),a=new SessionActivity({storage:saved});
+ a.update([status('a','local','active')]);a.update([status('a','local','idle')]);
+ a.read('local|a');a.update([{id:'a',host:'local',connected:false,status:'unknown'}]);
+ assert.equal(a.indicator('local|a'),null);
+ assert.equal(new SessionActivity({storage:saved}).indicator('local|a'),null);
+});
+test('viewing an offline completion clears the notification but preserves uncertainty for a running chat',()=>{
+ const a=new SessionActivity({storage:storage()});
+ a.update([status('a','local','active'),status('b','local','active')]);a.update([status('a','local','idle')]);
+ const offline=id=>({id,host:'local',connected:false,status:'unknown'});
+ a.update([offline('a'),offline('b')]);assert.equal(a.indicator('local|a').kind,'unknown');
+ a.update([offline('a')],'local|a');assert.equal(a.indicator('local|a'),null);
+ a.read('local|b');assert.equal(a.indicator('local|b').kind,'unknown');
+ a.update([status('a','local','idle')]);assert.equal(a.indicator('local|a'),null);
+ a.update([status('a','local','idle','two')]);assert.equal(a.indicator('local|a').kind,'completed');
+});
 function fixture(){
  let count=0,thumbCalls=[],upload=async(key,id,file)=>({id,name:file.name,size:file.size,image:null});
  const calls=[],saved=storage(),events=new Map();

@@ -1,3 +1,26 @@
+<a id="v2113"></a>
+
+## v2.1.13 · 修复聊天灰点与安卓跟随系统主题
+
+桌面与手机版本 **2.1.13**，手机构建号 **46**。提供 **Mac Apple Silicon / Intel 和 Android**，沿用现有应用标识与签名。本次需要同时更新 Mac 网关和 Android APK，再重新打开电脑连接。
+
+### 修复内容
+
+- **已读聊天仍显示灰点**：灰点原意为实时运行状态不可用，但旧逻辑会给已读、空闲的聊天也显示灰点。现在这类聊天不会仅因断连出现灰点；查看离线聊天时也清除已有完成标识。运行中或仍有未查看结果的聊天断连时继续保留状态未知提示。标识仍是当前浏览器或 App 的本地状态，不同步电脑 Codex 的全局已读状态。
+- **Android 跟随系统仍为亮色**：原生壳采用亮色主题，会影响 WebView 的系统主题判断。现在由 Android 读取系统深色开关并同步给页面，在页面加载、系统主题变化及返回前台时更新；手动选择浅色或深色时保持该选择。切换系统主题保留当前 WebView、草稿与标签。
+
+### 验证与手动测试
+
+前端回归 1264 项通过、1 项跳过；Android 系统主题与通知跳转 Java 夹具通过，19 个 Android Java 源文件编译通过。发布前另检查安装包架构、签名、内置页面与更新清单。源码和隔离夹具不代表 Android 真机通过；用户手动安装更新后验收。
+
+更新后可检查：打开已完成聊天再返回列表，灰点是否消失；将系统切换深色/浅色，确认“跟随系统”立即变化；退后台切换系统主题后返回，确认主题同步且草稿保留。手动选择浅色或深色后，系统切换应不覆盖选择。
+
+### English
+
+Fix idle, viewed chats acquiring gray status dots merely because their live connection expires. Clear pending completion indicators when an offline chat is viewed while retaining uncertainty for running or unread activity. Android now reports the actual system night mode to the page on load, configuration changes and resume, avoiding the light native shell's WebView media-query mismatch. Explicit light/dark preferences still take priority, and system theme changes preserve the WebView. Ships macOS arm64/x64 and Android build 46 with existing signing identities. Update both the Mac gateway and Android app; physical-device acceptance is performed manually after installation.
+
+---
+
 <a id="v2112"></a>
 
 ## v2.1.12 · 修复旧 CLI 会话阻塞完成通知扫描

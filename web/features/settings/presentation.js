@@ -57,7 +57,10 @@ if(typeof document!=='undefined')(()=>{
   }
   function save(){try{localStorage.setItem(key,JSON.stringify(settings));}catch{}}
   function apply(){
-    const dark=settings.theme==='dark'||settings.theme==='system'&&system.matches;
+    // Android's light native shell can make WebView matchMedia report light in system dark mode.
+    const native=BridgeHost.kind()==='android'?window.BridgeNativeColorScheme:null;
+    const systemDark=native==='dark'||native!=='light'&&system.matches;
+    const dark=settings.theme==='dark'||settings.theme==='system'&&systemDark;
     root.dataset.theme=dark?'dark':'light';root.dataset.density=settings.density;
     const palette=getComputedStyle(root),background=palette.getPropertyValue('--page').trim();
     // Accent text also appears on tinted message and selected surfaces.
@@ -156,6 +159,7 @@ if(typeof document!=='undefined')(()=>{
     results.forEach((result,index)=>{if(result.status==='fulfilled')fontReady(slots[index],null);else fontControls(slots[index]).status.textContent=BridgeI18n.t(result.reason.message);});
   };
   system.addEventListener('change',()=>{if(settings.theme==='system')preserveReading(apply);});
+  window.addEventListener('bridge-native-theme',()=>{if(settings.theme==='system')preserveReading(apply);});
   window.BridgePresentation={resizeMessage,relabel,openChat:()=>{setCollapsed(false);requestAnimationFrame(resizeMessage);},showError:()=>setCollapsed(false)};
   if(migrateAccent)save();
   apply();relabel();resizeMessage();

@@ -1,6 +1,6 @@
-# 个人发行版 v2.1.12
+# 个人发行版 v2.1.13
 
-下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，与 Dev 共存；版本 2.1.12、构建号 45。首次需要添加电脑，后续保留签名覆盖安装。通知、权限修复和迁移说明见 [更新说明](../RELEASE_NOTES.md#v2112)。
+下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，与 Dev 共存；版本 2.1.13、构建号 46。首次需要添加电脑，后续保留签名覆盖安装。通知、权限修复和迁移说明见 [更新说明](../RELEASE_NOTES.md#v2113)。
 
 # Android 与 iOS App
 
@@ -199,6 +199,10 @@ macOS/Linux 使用登录 shell 与 PTY；Windows 10 1809 及以上使用 ConPTY 
 
 更多设置可切换中英文、浅色/深色/跟随系统、强调色、文字和代码字号、间距、思考摘要与执行过程。正文、日志、模型/Skill 名称和用户标题不强行翻译。输入区箭头可收起/展开，保留草稿。复制消息或代码使用系统剪贴板。
 
+Android 的“跟随系统”读取手机系统的深色模式开关；如果系统设了定时切换，则随系统定时变化，不单独按当前时间判断。页面加载、App 返回前台和系统主题切换时都会同步；手动选择浅色或深色时保持该选择。切换系统主题不重建聊天页面。
+
+聊天列表绿点表示运行中，蓝点表示完成未查看，橙点表示失败或停止未查看。灰点表示尚有运行或未查看状态，但实时连接暂不可用；已查看且空闲的聊天不会仅因断连显示灰点。这些标识是当前浏览器或 App 的本地状态，不代表电脑 Codex 的全局已读状态。
+
 ## 开发与构建
 
 [源码对照表](source-map.json) · [Android 规则](android/AGENTS.md) · [iOS 规则](ios/AGENTS.md) · [共享脚本](shared/AGENTS.md)
@@ -206,6 +210,8 @@ macOS/Linux 使用登录 shell 与 PTY；Windows 10 1809 及以上使用 ConPTY 
 两端共用的页面适配、剪贴板等在 `shared/web/` 保留单一源码，原生平台分开维护。源码资源回归使用 `node --test mobile/tests/*.test.cjs`，不会运行原生编译器。
 
 Android 入口是 `scripts/build-mobile-android.py`，使用项目 `.tmp/mobile-tools` 中已准备的 JDK、SDK 和 ZXing；发布必须保留既有签名，不能以新建密钥替代升级验证。地址边界验证见 `scripts/test-mobile-urls.py`，会话验证见 `scripts/test-mobile-session.py`，通知事件见 `tests/test_mobile_events.py`。
+
+系统主题回归为 `node --test tests/system-theme.test.cjs` 与 `python3 -B scripts/test-mobile-theme.py`：前者覆盖实际外观脚本和生命周期接线，后者用隔离 Java 夹具执行 Android 的系统主题上报方法。两者不代替 Android 真机/WebView 验证。
 
 iOS 构建入口 `scripts/build-mobile-ios.py` 生成未签名 IPA 和包含受版本管理源码的 Xcode ZIP；`--source-only` 只导出源码，无需 Xcode。脚本不会自动安装模拟器运行时；模拟器 SDK 编译与实际启动测试应分别记录。
 
