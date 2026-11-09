@@ -32,7 +32,7 @@
 .message.progress-message>.who{display:none}
 .working{display:flex;align-items:flex-start;gap:8px;min-width:0;line-height:20px}
 .working>i{flex:none;margin:7px 0 0}
-.working>[data-activity-label]{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.working>[data-activity-label]{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;line-clamp:5;max-height:100px;max-height:5lh;overflow:hidden}
 .working>[data-activity-elapsed]{flex:none;margin-left:auto;white-space:nowrap;font-size:11px}
 .working[data-activity-kind=search]>i{position:relative;width:10px;height:10px;margin-top:4px;background:none;border:1.5px solid currentColor;animation:none}
 .working[data-activity-kind=search]>i:after{content:'';position:absolute;width:5px;height:1.5px;right:-4px;bottom:-2px;background:currentColor;transform:rotate(45deg)}

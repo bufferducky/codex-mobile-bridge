@@ -72,3 +72,5 @@ Claude 账号面板的定时刷新只读已保存额度；只有显式 `details(
 Codex 时间线中的独立 `Reconnecting... 1/5` 等自动重连记录显示为单行灰色状态，保留重试次数；不显示执行错误标题或黄色卡片。重试耗尽、带错误详情或截断正文的记录继续显示错误提示。
 
 审查卡片、后续操作、审查链接和选中片段引用见 [使用说明](../docs/output-interactions.md)。`shared/output-directives.js` 仅解析完整标记，文件入口仍依赖服务器授权的 artifact；`features/chat/composer-quotes.js` 观察原生选区并复用 `ComposerDrafts`，引用和操作按钮不自动发送。
+
+实时执行状态由 `ChatActivityStatus` 按原生元数据持续更新；`shared/presentation-content.css` 将活动摘要限制为最多五个视觉行，超过时显示省略号。短活动使用实际高度，右侧耗时独立显示；命令元数据和执行详情保留原文。此样式由网关提供，手机重新加载连接页面后生效，无需更新原生 App。浏览器检查同时覆盖运行中/已完成的长脚本与随后短活动的高度恢复。

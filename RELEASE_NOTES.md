@@ -1,3 +1,27 @@
+<a id="v2114"></a>
+
+## v2.1.14 · 实时执行摘要最多显示五行
+
+桌面与手机版本 **2.1.14**，手机构建号 **47**。提供 **Mac Apple Silicon / Intel 和 Android**，沿用现有应用标识与签名。**本次只需更新电脑网关**；已有 Android 2.1.13 无需重新安装，重新进入电脑连接页面即可加载新样式。新版 APK 可按需手动覆盖更新。
+
+### 改进
+
+- **长脚本不再挤占聊天屏幕**：底部“正在运行 / 已运行”的实时执行摘要，按页面实际排版最多显示五行，超出部分用省略号表示。Python、Shell 等多行脚本和自动换行的长命令均适用。
+- **保留实时进度与完整记录**：当前执行活动仍持续更新，右侧已处理耗时继续显示；执行详情保留完整命令。截断仅影响摘要的视觉展示。
+- **短活动自动恢复紧凑高度**：切换到短命令、读取或搜索时按实际内容收缩，无需固定占满五行。共享聊天页面的浏览器与手机 App 使用相同限制。
+
+### 验证与使用
+
+隔离 Chromium 使用生产页面模块，覆盖浏览器 / Android 宿主、320 / 390 / 430 / 844 / 1440 px 和中英两种语言，共 20 个组合；验证运行中与已完成的长脚本、五行省略、命令元数据保留、耗时不重叠，以及后续短活动恢复高度。另运行前端、更新器与移动版本回归，发布包校验架构、签名、内置资源和上传后的校验文件。浏览器模拟结果不等同于 Android 真机验收。
+
+更新 PC 后，在手机退出当前电脑连接并重新进入，观察长脚本摘要最多五行；需要查看完整命令时展开对应的执行详情。Android 安装操作由用户自行完成。
+
+### English
+
+Limit live execution captions to five visual lines with an ellipsis, including running and completed Python/Shell scripts and long wrapped commands. Keep live activity updates, elapsed time and complete execution records; short actions shrink to their natural height. Verified in 20 Chromium host/width/language combinations using production modules, plus source and release-package checks. Ships macOS arm64/x64 and Android build 47 with existing signing identities. Update the PC gateway and reopen the phone connection; reinstalling Android 2.1.13 is unnecessary for this change. Physical Android acceptance remains manual.
+
+---
+
 <a id="v2113"></a>
 
 ## v2.1.13 · 修复聊天灰点与安卓跟随系统主题

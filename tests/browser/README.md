@@ -8,7 +8,7 @@
 
 代码高亮检查 `code-highlight.browser.js` 在加载生产 Markdown bundle、本地 Prism 和样式的隔离页面中直接执行并返回 Promise。使用合成代码和剪贴板替身，检查 Java/SQL 等语言及别名、语言标签、流式未闭合围栏、HTML 安全、原文复制、按需加载失败和延迟返回、缓存及工作量上限、窄屏滚动和明暗配色。需实际等待结果，浏览器模拟不能替代 Android WebView 真机验收。
 
-`node scripts/smoke-reading-ui.cjs` 使用本机 Chromium 自动运行上述高亮与进度/重连夹具，覆盖浏览器/Android 宿主、320/390/844/1440 px 及中英两种语言，结果写入 `.tmp/reading-ui-result.json`。设置 `CMB_BROWSER` 可指定浏览器程序。`CMB_ANDROID_UI_FIXTURE=1 CMB_BROWSER=<浏览器程序> node scripts/smoke-wsl-app-ui.cjs` 另运行完整生产页面启动及 Android 界面夹具；两个入口均只使用合成内容。
+`node scripts/smoke-reading-ui.cjs` 使用本机 Chromium 自动运行上述高亮、进度/重连与实时活动夹具，覆盖浏览器/Android 宿主、320/390/430/844/1440 px 及中英两种语言，结果写入 `.tmp/reading-ui-result.json`。设置 `CMB_BROWSER` 可指定浏览器程序。`CMB_ANDROID_UI_FIXTURE=1 CMB_BROWSER=<浏览器程序> node scripts/smoke-wsl-app-ui.cjs` 另运行完整生产页面启动及 Android 界面夹具；两个入口均只使用合成内容。
 
 ## 进度说明与工具摘要
 
@@ -16,7 +16,7 @@ Android 合成页面中加载 `android-density.browser.js` 后调用 `runAndroid
 
 在已加载生产 `timeline.js`、Markdown 和聊天样式的隔离页面中加载 `progress-timeline.browser.js`，调用并等待 `runProgressTimelineChecks()`。分别以 320、390、844、1440 px 视口运行中英文检查，核验进度说明直接显示、连续工具和单次异常合并折叠、任务级错误与审批元数据保留，以及流式更新、显示开关和历史前插时的展开状态。详情请求只返回闭包中的合成结果，不访问真实聊天。`{keepOpen:true}` 保留示例供视觉检查，结束后调用 `window.__progressTimelinePreview.cleanup()`。
 
-同一隔离页面可加载 `live-activity.browser.js` 并调用 `runLiveActivityChecks()`，检查仅元数据变化时当前搜索/读取目标更新、原生耗时、工具折叠与显示开关、历史页不覆盖实时状态、审批优先、完成/断线/切换聊天时清理状态，以及长文件名与计时不重叠。`{keepOpen:true}` 保留样例，结束后调用 `window.__liveActivityPreview.cleanup()`。本地计时与后台暂停另由 `live-activity.test.cjs` 使用可控时钟验证。
+同一隔离页面可加载 `live-activity.browser.js` 并调用 `runLiveActivityChecks()`，检查仅元数据变化时当前搜索/读取目标更新、原生耗时、工具折叠与显示开关、历史页不覆盖实时状态、审批优先、完成/断线/切换聊天时清理状态，以及长文件名与计时不重叠、运行中和已完成的多行脚本最多显示五个视觉行并省略、完整命令元数据保留及短活动恢复原高度。`{keepOpen:true}` 保留样例，结束后调用 `window.__liveActivityPreview.cleanup()`。本地计时与后台暂停另由 `live-activity.test.cjs` 使用可控时钟验证。
 
 ## 启动恢复检查
 

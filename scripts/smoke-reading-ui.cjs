@@ -35,7 +35,7 @@ async function main(){
     const evaluate=async expression=>{const value=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(value.exceptionDetails)throw Error(value.exceptionDetails.exception?.description||value.exceptionDetails.text);return value.result.value;};
     await call('Runtime.enable');await call('Page.enable');
     const results=[];
-    for(const host of ['browser','android'])for(const width of [320,390,844,1440]){
+    for(const host of ['browser','android'])for(const width of [320,390,430,844,1440]){
       await call('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:host==='android'});
       await call('Emulation.setUserAgentOverride',{userAgent:'Mozilla/5.0 Chrome/156.0.0.0 Safari/537.36'+(host==='android'?' BridgeMobile/0.1-Android':'')});
       await call('Page.navigate',{url:'http://127.0.0.1:'+server.address().port});
@@ -43,9 +43,10 @@ async function main(){
       if(host==='android')await evaluate('document.documentElement.classList.add("bridge-mobile");true');
       const highlight=await evaluate(fs.readFileSync(path.join(root,'tests/browser/code-highlight.browser.js'),'utf8'));
       await evaluate(fs.readFileSync(path.join(root,'tests/browser/progress-timeline.browser.js'),'utf8'));
+      await evaluate(fs.readFileSync(path.join(root,'tests/browser/live-activity.browser.js'),'utf8'));
       for(const language of ['zh','en']){
         await evaluate('BridgeI18n.setLanguage('+JSON.stringify(language)+');true');
-        const progress=await evaluate('runProgressTimelineChecks()');results.push({host,width,language,highlightChecks:highlight.passed,progressChecks:progress.passed});
+        const progress=await evaluate('runProgressTimelineChecks()'),live=await evaluate('runLiveActivityChecks()');results.push({host,width,language,highlightChecks:highlight.passed,progressChecks:progress.passed,liveChecks:live.passed});
       }
     }
     assert.deepEqual(errors,[],'Production renderers must not throw runtime errors');

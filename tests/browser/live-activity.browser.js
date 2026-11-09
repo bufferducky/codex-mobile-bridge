@@ -50,9 +50,7 @@ async function runLiveActivityChecks({keepOpen=false}={}){
     check(label.textContent===timelineText('正在搜索 {target} 文件夹中的文件').replace('{target}',longTarget),'The folder caption retains the full official suffix');
     check(label.title.includes(query),'Full search parameters remain in execution details');
     check(getComputedStyle(label).whiteSpace!=='nowrap'&&label.clientHeight>20,'Long activity descriptions wrap instead of being forced into one line');
-    const tail=document.createRange();tail.setStart(label.firstChild,label.firstChild.length-1);tail.setEnd(label.firstChild,label.firstChild.length);
-    const tailRect=tail.getBoundingClientRect(),labelRect=label.getBoundingClientRect();
-    check(tailRect.right<=labelRect.right+1&&tailRect.bottom<=labelRect.bottom+1,'The final character remains inside the visible label');
+    check(label.clientHeight<=5*parseFloat(getComputedStyle(label).lineHeight)+1,'Long activity descriptions occupy at most five visual lines');
     const actions=[{kind:'read',target:'Controller.java'},{kind:'search',target:'supply/src',query:'editable|service_review_source_version'},{kind:'read',target:'VersionMapper.java'},{kind:'list',target:'supply/src/main'}];
     timeline.apply(page(11,{...activity,kind:'read',target:'Controller.java',actions}));
     check(label.textContent===timelineText('正在列出 {target} 文件夹中的文件').replace('{target}','supply/src/main'),'The most recent action drives the compact caption');
@@ -64,6 +62,19 @@ async function runLiveActivityChecks({keepOpen=false}={}){
     timeline.apply(page(13,{...activity,target:'supply_mall_server',query:'sync/center/openApi/supplier|pageWithoutTenant'}));
     check(label.textContent===exactCaption,'The fillOpenApiShopIntroduction caption matches the official wording exactly');
     check(nodes.every((node,index)=>messages.children[index]===node),'Compound action changes do not rebuild the transcript');
+    const command="python3 - <<'PY'\nfrom pathlib import Path\nimport sqlite3,json\n"+Array.from({length:24},(_,index)=>"row_"+index+" = connection.execute('SELECT body FROM settings WHERE key=?', ('health',)).fetchone()").join('\n')+'\nPY';
+    for(const [index,status] of ['inProgress','completed'].entries()){
+      timeline.apply(page(14+index,{...activity,kind:'command',command,status}));
+      await frame();
+      const style=getComputedStyle(label),lineHeight=parseFloat(style.lineHeight);
+      check(label.clientHeight<=5*lineHeight+1&&label.scrollHeight>label.clientHeight,'Long '+status+' scripts are clipped to five visual lines');
+      check(style.overflow==='hidden'&&style.webkitLineClamp==='5','Clipped scripts use a five-line ellipsis');
+      check(label.textContent.endsWith(command)&&label.title.includes(command),'Clipping retains the complete command metadata');
+      check(!elapsed.hidden&&label.getBoundingClientRect().right<=elapsed.getBoundingClientRect().left,'Clipped scripts leave elapsed time visible beside the label');
+    }
+    timeline.apply(page(16,{...activity,kind:'read',target:'MainActivity.java'}));
+    await frame();
+    check(label.clientHeight<3*parseFloat(getComputedStyle(label).lineHeight),'A new short action shrinks after a long script');
     await frame();
     check(root.scrollWidth<=root.clientWidth&&working.scrollWidth<=working.clientWidth,'Live label and elapsed time fit the viewport');
     check(label.getBoundingClientRect().right<=elapsed.getBoundingClientRect().left,'Long targets do not overlap elapsed time');
@@ -71,7 +82,7 @@ async function runLiveActivityChecks({keepOpen=false}={}){
     timeline.dispose();check(working.hidden,'Switching away disposes the live status');
     // Keep a fresh running state for screenshot review.
     if(keepOpen){
-      timeline.activityStatus=new ChatActivityStatus(working);timeline.activityStatus.update(page(14,{...activity,target:'supply_mall_server',query:'sync/center/openApi/supplier|pageWithoutTenant'}).meta);
+      timeline.activityStatus=new ChatActivityStatus(working);timeline.activityStatus.update(page(17,{...activity,kind:'command',command,status:'inProgress'}).meta);
       window.__liveActivityPreview={root,cleanup};
     }
     return {passed:checks.length,width:innerWidth,checks};
