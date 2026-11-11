@@ -1226,8 +1226,15 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("请求回应格式不正确")
                 result = bridge.respond(thread_id, body.get("requestId"), response)
             elif action == "reconnect":
+                if 'rebuild' in body and (body.get('rebuild') is not True or body.get('activate') is not True or set(body) != {'activate', 'rebuild'}):
+                    raise ValueError('重建连接请求无效')
                 if body.get('activate') is True:
-                    session = bridge.activate(thread_id)
+                    if hasattr(bridge, 'reconnect_session'):
+                        session = bridge.reconnect_session(thread_id, rebuild=bool(body.get('rebuild')))
+                    else:
+                        if body.get('rebuild'):
+                            raise ValueError('此会话不使用桌面连接，请使用继续会话。')
+                        session = bridge.activate(thread_id)
                     result = {'ok': True, 'connected': session.connected}
                 elif body.get('progressive'):
                     bridge.session(thread_id, background=True, force=True)

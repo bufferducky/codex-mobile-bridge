@@ -1696,6 +1696,25 @@ class HttpTests(unittest.TestCase):
         self.assertIn('retry', body['error'])
         self.assertNotIn('日志', body['error'])
 
+    def test_remote_transport_rebuild_requires_auth_csrf_and_explicit_flags(self):
+        from types import SimpleNamespace
+        calls = []
+        self.server.bridge.reconnect_session = lambda tid, *, rebuild=False: calls.append((tid,rebuild)) or SimpleNamespace(connected=True)
+        path = '/api/sessions/' + THREAD + '/reconnect'
+        body = {'activate': True, 'rebuild': True}
+        self.assertEqual(self.request('POST', path, body)[0], 401)
+        headers = self.login()
+        self.assertEqual(self.request('POST', path, body, {'Cookie': headers['Cookie']})[0], 403)
+        for invalid in ({'rebuild': True}, {'activate': True, 'rebuild': 1}, {**body, 'force': True}):
+            self.assertEqual(self.request('POST', path, invalid, headers)[0], 400)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.request('POST', path, body, headers)[0], 200)
+        self.assertEqual(calls, [(THREAD, True)])
+        del self.server.bridge.reconnect_session
+        self.server.bridge.activate = lambda tid: calls.append(('activate', tid))
+        self.assertEqual(self.request('POST', path, body, headers)[0], 400)
+        self.assertEqual(calls, [(THREAD, True)])
+
     def test_reverse_proxy_preserved_host_keeps_secure_login(self):
         origin='https://codex.example.test:9443'
         host='codex.example.test:9443'

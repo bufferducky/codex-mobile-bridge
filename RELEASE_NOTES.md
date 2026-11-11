@@ -1,3 +1,30 @@
+<a id="v2115"></a>
+
+## v2.1.15 · 单独移植 Codex 连接恢复修复
+
+保留本 Fork 的界面、通知和更新签名配置，只从上游 `25bd5c48`、`70b7d150` 及后续连接重建修正中提取 Codex Desktop 连接恢复逻辑。桌面与手机版本 **2.1.15**，手机构建号 **48**。
+
+### 修复
+
+- **摆脱仍存活的旧 IPC 路由**：显式重新连接时核对 Unix socket 的设备号和 inode。若入口已替换，先确认旧 owner 是否仍能提供实时快照；旧 owner 可用则继续使用，否则重建 Bridge 自己的 follower 连接。
+- **断连后提供“重建连接”**：只替换网关连接，不停止 Codex 或原生任务。重建失败仍可重试，并提示核对任务后在应用管理中处理；不会自动重启 Codex。
+- **重复重连共享结果**：同一聊天的并发连接请求合并，避免在操作锁后反复排队。重建等待既有操作结束，旧读取线程不能清空新连接，关闭连接可打断阻塞写入。
+- **保留未知操作**：owner 不可用时及时使控制状态失效，保留聊天历史和草稿；不会因断线或重建而自动重发消息、审批或其他写操作。
+
+### 使用与边界
+
+主要修复位于电脑网关；更新 Mac Bridge 后，在手机重新进入电脑连接即可加载共享页面，已有 Android 2.1.13/2.1.14 可继续使用，新 APK 可按需覆盖更新。原生 IPC owner 被 Codex 内部隔离时仍可能需要人工核对任务后重启 Codex。
+
+首页直接出现 Nginx **502 Bad Gateway** 表示公网反代或隧道链路不可用，应另查 SSH 转发和网络路径；IPC 恢复补丁不能修复尚未到达网关的 HTTP 请求。此次现场已独立恢复 SSH 链路并确认公网首页返回 200，该机器上的网络配置不包含在发布包中。
+
+验证覆盖真实 Unix socket 路由替换、旧 owner 仍可用、断连重建、并发合并、在途操作保护、未知写入不重放，以及重建 HTTP 的登录/CSRF/参数校验。另以只读 follower 连接当前 Codex，成功获得实时 v11 快照；未启动模型任务。安装包验证与手机真机验收分别进行，手机更新及验收由用户完成。
+
+### English
+
+Selectively backport Codex Desktop IPC recovery from upstream without the unrelated clients or UI redesign. Detect replaced Unix endpoints, retain responsive original owners, rebuild only the gateway follower, coalesce concurrent reconnects and prevent stale readers from clearing replacement connections. Unknown writes are never replayed. The PC gateway contains the fix; existing Android 2.1.13/2.1.14 remains usable after reopening the connection. A reverse-proxy HTTP 502 is a separate tunnel/network failure and is not repaired by IPC recovery.
+
+---
+
 <a id="v2114"></a>
 
 ## v2.1.14 · 实时执行摘要最多显示五行

@@ -124,6 +124,19 @@ test('a failed CLI join remains visible through later history renders and clears
   ctx.renderState({...view,connected:true,access:{...access,readOnly:false,canSend:true}});
   assert.equal(ctx.reconnectFailure,null);assert.equal($('notice').hidden,true);
 });
+test('desktop reconnect rebuilds the follower when recommended and preserves failures',async()=>{
+  const {ctx,$}=fixture(),access={source:'desktop',canReconnect:true},view={host:'local',title:'Desktop',cwd:'/work',access,connected:false,rebuildRecommended:true,status:'idle',requests:[],submissions:[],historyComplete:true};
+  ctx.renderState(view);ctx.sessionUrl=()=>'/api/sessions/a/reconnect';ctx.toast=()=>{};
+  const sent=[];ctx.api=async(url,body)=>{sent.push(JSON.parse(JSON.stringify(body)));throw Error('Original owner unavailable');};
+  vm.runInContext(reconnectCode,ctx);await $('reconnect').onclick();
+  assert.deepEqual(sent,[{activate:true,rebuild:true}]);
+  assert.equal($('reconnect').textContent,'重建连接');
+  assert.equal($('notice-text').textContent,'Original owner unavailable');
+  ctx.renderState({...view,connectionError:'Transport unavailable'});
+  assert.equal($('notice-text').textContent,'Original owner unavailable');
+  ctx.renderState({...view,connected:true});
+  assert.equal(ctx.reconnectFailure,null);
+});
 test('connection diagnostics is secondary to settings and keeps the original export route',()=>{
   assert.doesNotMatch(html,/<a id="session-diagnostics"/);
   assert.match(html,/<button id="open-session-diagnostics"[^>]*data-i18n="SSH 连接诊断"/);

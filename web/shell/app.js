@@ -863,9 +863,9 @@ function renderState(view){
   $('status').textContent=!view.connected?(view.loadingHistory?t('读取历史中'):view.activating?t('正在恢复会话…'):access.source==='cli'?t('历史记录'):view.connecting?t('连接桌面中'):t('历史记录')):view.requests.length?t('等待回应'):view.status==='active'?t('运行中'):t('已连接');
   $('status').classList.toggle('offline',!view.connected);
   $('notice').hidden=view.connected;
-  $('notice-text').textContent=view.readOnlyReason?t(view.readOnlyReason):access.source==='cli'?(t(reconnectFailure||view.connectionError)||t(access.canReconnect?'可先阅读聊天历史；继续时将连接或恢复原 CLI 会话。':access.reason||'CLI 聊天历史可阅读；当前无法继续此会话。')):limited&&!access.canReconnect?(t(access.reason)||t('已保存的历史可阅读；当前来源未提供远程控制。')):view.activating?t('正在自动连接；必要时会在电脑 Codex 中打开此聊天。'):view.connecting?t('正在连接桌面，可先阅读已保存的历史。'):t(view.connectionError)||t('暂未连接，可先阅读历史或点击重新连接。');
+  $('notice-text').textContent=view.readOnlyReason?t(view.readOnlyReason):access.source==='cli'?(t(reconnectFailure||view.connectionError)||t(access.canReconnect?'可先阅读聊天历史；继续时将连接或恢复原 CLI 会话。':access.reason||'CLI 聊天历史可阅读；当前无法继续此会话。')):limited&&!access.canReconnect?(t(access.reason)||t('已保存的历史可阅读；当前来源未提供远程控制。')):view.activating?t('正在自动连接；必要时会在电脑 Codex 中打开此聊天。'):view.connecting?t('正在连接桌面，可先阅读已保存的历史。'):t(reconnectFailure||view.connectionError)||t('暂未连接，可先阅读历史或点击重新连接。');
   $('reconnect').hidden=limited&&!access.canReconnect;
-  $('reconnect').textContent=t(access.source==='cli'?'继续会话':'重新连接');
+  $('reconnect').textContent=t(access.source==='cli'?'继续会话':view.rebuildRecommended?'重建连接':'重新连接');
   $('history').hidden=view.historyComplete||!view.connected;
   $('working').hidden=view.status!=='active';$('stop').hidden=view.status!=='active'||!view.connected||!access.canInterrupt;
   $('send').disabled=view.loadingHistory||view.activating||sending||!attachments.ready()||!access.canSend;
@@ -1035,7 +1035,7 @@ $('composer').onsubmit=async event=>{
 $('message').onkeydown=event=>{if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();$('composer').requestSubmit();}};
 $('stop').onclick=async()=>{if(!currentAccess().canInterrupt)return;try{await api(sessionUrl(currentId,'stop'),{});toast('已请求停止');}catch(e){toast(e.message);}};
 $('history').onclick=async()=>{$('history').disabled=true;try{await api('/api/sessions/'+currentId+'/history',{});}catch(e){toast(e.message);}finally{$('history').disabled=false;}};
-$('reconnect').onclick=async()=>{const access=currentAccess();if(!access.canReconnect)return;const id=currentId,host=currentHost;$('reconnect').disabled=true;reconnectFailure=null;try{await api(sessionUrl(id,'reconnect',host),{activate:true});}catch(e){if(id===currentId&&host===currentHost&&access.source==='cli'){reconnectFailure=e.message;$('notice').hidden=false;$('notice-text').textContent=t(e.message);}toast(e.message);}finally{$('reconnect').disabled=false;}};
+$('reconnect').onclick=async()=>{const access=currentAccess();if(!access.canReconnect)return;const id=currentId,host=currentHost,rebuild=state?.rebuildRecommended===true;$('reconnect').disabled=true;reconnectFailure=null;try{await api(sessionUrl(id,'reconnect',host),{activate:true,...(rebuild?{rebuild:true}:{})});}catch(e){if(id===currentId&&host===currentHost){reconnectFailure=e.message;$('notice').hidden=false;$('notice-text').textContent=t(e.message);}toast(e.message);}finally{$('reconnect').disabled=false;}};
 document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>$(button.dataset.close).close());
 async function loadCatalogKind(kind,refresh=false){
   if(kind!=='models')throw Error(t('未知目录类型'));

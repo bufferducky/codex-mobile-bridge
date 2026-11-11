@@ -7,7 +7,7 @@ import threading
 import uuid
 from concurrent.futures import Future, TimeoutError
 
-from bridge.clients.codex.transport import connect_stream
+from bridge.clients.codex.transport import connect_stream, endpoint_identity
 
 
 class IPCError(Exception):
@@ -43,20 +43,37 @@ class DesktopIPC:
         self.on_disconnect = on_disconnect or (lambda: None)
         self.socket = None
         self.client_id = None
+        self.endpoint_identity = None
         self.pending = {}
         self.lock = threading.RLock()
         self.write_lock = threading.Lock()
         self.connect_lock = threading.Lock()
+        self.event_lock = threading.RLock()
+
+    def reconnect(self):
+        """Replace only this follower's transport; never stop the native owner."""
+        with self.connect_lock:
+            self.close()
+        self.connect()
+
+    def endpoint_changed(self):
+        """Report a replacement, without interrupting any pending operation."""
+        current = endpoint_identity(self.path)
+        with self.lock:
+            return bool(self.socket and self.endpoint_identity is not None and
+                        current is not None and current != self.endpoint_identity)
 
     def connect(self):
         with self.connect_lock:
             if self.client_id and self.socket:
                 return
             try:
+                identity = endpoint_identity(self.path)
                 sock = connect_stream(self.path)
             except OSError as exc:
                 raise IPCError("桌面 App 未连接，请打开 Codex App。") from exc
             self.socket = sock
+            self.endpoint_identity = identity
             threading.Thread(target=self._read_loop, args=(sock,), daemon=True).start()
             try:
                 result = self.request("initialize", {"clientType": "codex-mobile-bridge"}, timeout=5)
@@ -144,37 +161,48 @@ class DesktopIPC:
                 message = json.loads(self._exact(sock, length))
                 if message.get("type") == "response":
                     with self.lock:
+                        if self.socket is not sock:
+                            return
                         future = self.pending.get(message.get("requestId"))
                         if future and not future.done():
                             future.set_result(message)
                 elif message.get("type") == "client-discovery-request":
-                    self._send({"type": "client-discovery-response",
-                                "requestId": message["requestId"], "response": {"canHandle": False}})
+                    with self.event_lock:
+                        if self.socket is sock:
+                            self._send({"type": "client-discovery-response",
+                                        "requestId": message["requestId"], "response": {"canHandle": False}})
                 elif message.get("type") == "broadcast":
-                    targets = message.get("targetClientIds")
-                    if not targets or self.client_id in targets:
-                        self.on_event(message)
+                    with self.event_lock:
+                        targets = message.get("targetClientIds")
+                        if self.socket is sock and (not targets or self.client_id in targets):
+                            self.on_event(message)
         except (OSError, EOFError, ValueError, IPCError):
             pass
         finally:
-            disconnected = False
+            self._disconnect(sock)
+
+    def close(self):
+        self._disconnect(self.socket)
+
+    def _disconnect(self, sock):
+        if sock is None:
+            return
+        # Interrupt sendall before taking locks a blocked writer may hold.
+        # Socket identity below still prevents an old reader clearing a replacement.
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        sock.close()
+        with self.event_lock:
             with self.lock:
-                if self.socket is sock:
-                    disconnected = True
+                disconnected = self.socket is sock
+                if disconnected:
                     self.socket = None
                     self.client_id = None
+                    self.endpoint_identity = None
                     for future in self.pending.values():
                         if not future.done():
                             future.set_exception(IPCError("桌面连接已断开"))
             if disconnected:
                 self.on_disconnect()
-            sock.close()
-
-    def close(self):
-        sock = self.socket
-        if sock:
-            try:
-                sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            sock.close()
