@@ -26,8 +26,6 @@
 :root[data-bridge-host=android] .message-actions .message-fork {--message-action-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%226%22%20cy%3D%225%22%20r%3D%222%22%2F%3E%3Ccircle%20cx%3D%2218%22%20cy%3D%225%22%20r%3D%222%22%2F%3E%3Ccircle%20cx%3D%226%22%20cy%3D%2219%22%20r%3D%222%22%2F%3E%3Cpath%20d%3D%22M6%207v10M18%207v2a5%205%200%200%201-5%205H6%22%2F%3E%3C%2Fsvg%3E")}
 :root[data-bridge-host=android] .message-actions button[data-feedback=copied] {--message-action-icon:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m5%2012%204%204L19%206%22%2F%3E%3C%2Fsvg%3E")}
 :root[data-bridge-host=android] .message-actions button[data-feedback=copied] {color:var(--green)}
-:root[data-bridge-host=android] .client-switch-dock,
-:root[data-bridge-host=android] #client-switch-toggle,
 :root[data-bridge-host=android] #chat>.chat-head>.client-icon {display:none!important}
 :root[data-bridge-host=android] #chat .chat-head {min-height:49px;height:49px;padding:2px 64px 2px 4px;gap:2px;border-bottom:1px solid var(--line)}
 :root[data-bridge-host=android] #chat .chat-title-button {min-height:44px;height:44px}

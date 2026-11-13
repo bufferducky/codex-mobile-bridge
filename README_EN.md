@@ -1,3 +1,5 @@
+> **Personal release**: Download this fork from [bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases). Current version: **2.1.16**, restoring Android app switching to **DeepSeek Harness**. Update the Mac gateway, then reopen the computer connection on your phone; existing Android apps remain compatible. Ships macOS Apple Silicon / Intel and Android with existing signing identities. See [release notes](RELEASE_NOTES.md#v2116) and [Harness setup](docs/deepseek-harness.md). Historical upstream information follows.
+
 <p align="center">
 
   <img src="site/assets/icon.png" alt="Codex Mobile Bridge" width="112" height="112">

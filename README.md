@@ -1,4 +1,4 @@
-> **个人发行版**：从 [bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases) 下载本分支安装包。当前版本 **2.1.14**；后续应用更新指向本仓库。Android 正式版与 Dev 共存，Mac 首次手动覆盖安装。参见 [v2.1.14 更新说明](RELEASE_NOTES.md#v2114)。以下历史说明保留原项目来源。
+> **个人发行版**：从 [bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases) 下载本分支安装包。当前版本 **2.1.16**：恢复 Android 的 **DeepSeek Harness** 应用切换入口。更新电脑网关后，在手机重新进入电脑连接；原 Android App 可继续使用。提供 Mac Apple Silicon / Intel 与 Android 同签名更新包。参见 [更新说明](RELEASE_NOTES.md#v2116) 和 [Harness 接入步骤](docs/deepseek-harness.md#android-恢复-harness-入口个人版-v2116)。以下历史说明保留原项目来源。
 
 <p align="center">
 

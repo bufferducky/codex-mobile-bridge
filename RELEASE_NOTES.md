@@ -1,3 +1,29 @@
+<a id="v2116"></a>
+
+## v2.1.16 · 恢复安卓 DeepSeek Harness 入口
+
+恢复此前个人版 Android 的“只用 Codex”限制所隐藏的 **DeepSeek Harness** 入口，复用已有 Harness 桌面会话接入。桌面与手机版本 **2.1.16**，手机构建号 **49**。提供 **Mac Apple Silicon / Intel 和 Android**，沿用原有应用标识、Android 签名及桌面更新签名。
+
+### 改进
+
+- **应用切换恢复**：Android 可切换到网关已经启用的 DeepSeek Harness，保留所选客户端；刷新客户端状态或重新进入页面不再强制退回 Codex。仅启用 Harness、停用 Codex 时仍可进入 Harness。
+- **底部图标与滑动恢复**：多个应用启用时显示底部切换栏，恢复图标显示偏好、收起控制与列表左右滑动。保留 Android 雾蓝灰、紧凑输入与原生返回、下载等既有交互。
+- **沿用独立客户端**：各客户端保留自己的聊天、账号、模型、项目与原执行环境。恢复页面入口不自动启用其他客户端，也不迁移 Codex 聊天或修改任务。本次不改变独立的“Harness 官方 Web”转发。
+
+### 更新与验收
+
+主要修改随电脑网关提供。更新 Mac Bridge 到 **2.1.16** 后，在手机退出当前电脑连接并重新进入；已有 Android 2.1.13–2.1.15 无需为此重新安装，新版 APK 可按需同签名覆盖升级。
+
+先在电脑 Harness 完成安装与登录/API 配置，再到网关 **客户端与接入** 扫描、配置并启用 **DeepSeek Harness**。手机出现多个应用时，点击底部 Harness 图标，检查聊天列表、打开已有会话及切回 Codex；如果没有图标，检查启用状态与外观设置。详见 [Harness 接入步骤](docs/deepseek-harness.md)。
+
+自动化验证覆盖 Android 的 Harness 选择与持久化、状态刷新、Codex 停用后的 Harness 可达性，以及生产页面的切换栏、Harness 会话打开和返回 Codex。隔离浏览器与合成会话不等同于实际 Harness 推理或 Android 真机通过；更新后的真实客户端验收由用户完成。
+
+### English
+
+Restore DeepSeek Harness access in the personal Android UI by removing the Codex-only presentation restriction. Reuse the existing Harness desktop-session adapter, retain the selected client across reloads and status refreshes, and restore the app switch dock, display preferences and list swipes. Only enabled clients are shown; account, workspace and execution ownership remain with their original client. The independent Harness official Web proxy is unchanged. Update the Mac gateway and reopen the phone connection; existing Android 2.1.13–2.1.15 remains compatible. Ships macOS arm64/x64 and Android build 49 with existing signing identities. Real Harness inference and physical Android acceptance follow the user's software update.
+
+---
+
 <a id="v2115"></a>
 
 ## v2.1.15 · 单独移植 Codex 连接恢复修复

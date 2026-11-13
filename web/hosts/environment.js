@@ -11,8 +11,7 @@ const BridgeHost = (() => {
     // Native injection can finish after deferred page scripts have executed.
     return !!globalThis.document?.documentElement?.classList.contains('bridge-mobile');
   }
-  function codexOnly(){return kind()==='android';}
-  return Object.freeze({kind, isNativeApp, hasNativeLayout, codexOnly});
+  return Object.freeze({kind, isNativeApp, hasNativeLayout});
 })();
 if (typeof module === 'object' && module.exports) module.exports = BridgeHost;
 

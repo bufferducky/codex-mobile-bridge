@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-function fixture(){
-  let mobile=false,choice=true,finishChoice;const choices=[],preferences=new Map();const context=vm.createContext({ClientLifecycle:{...require('../web/features/clients/client-lifecycle.js'),chooseDisable(client){choices.push(client.id);return choice==='pending'?new Promise(resolve=>finishChoice=resolve):choice;}},document:{documentElement:{classList:{contains:()=>mobile}},getElementById:()=>({hidden:false})},setTimeout,clearTimeout,AbortController,localStorage:{setItem:(key,value)=>preferences.set(key,value),getItem:key=>preferences.get(key)},Event:class{},window:{}});
+function fixture(userAgent='Mozilla/5.0'){
+  let mobile=false,choice=true,finishChoice;const choices=[],preferences=new Map();const context=vm.createContext({navigator:{userAgent},location:{search:''},URLSearchParams,ClientLifecycle:{...require('../web/features/clients/client-lifecycle.js'),chooseDisable(client){choices.push(client.id);return choice==='pending'?new Promise(resolve=>finishChoice=resolve):choice;}},document:{documentElement:{classList:{contains:()=>mobile}},getElementById:()=>({hidden:false})},setTimeout,clearTimeout,AbortController,localStorage:{setItem:(key,value)=>preferences.set(key,value),getItem:key=>preferences.get(key)},Event:class{},window:{}});
   context.BridgeI18n={t:value=>value};
   vm.runInContext(fs.readFileSync('web/hosts/environment.js','utf8'),context);
   vm.runInContext(fs.readFileSync('web/features/clients/client-navigation.js','utf8'),context);
@@ -477,11 +477,16 @@ test('Claude WSL management uses the packaged Claude icon',()=>{
 });
 
 
-test('Android Codex-only navigation ignores other providers without changing their enabled state',async()=>{
-  const context=vm.createContext({BridgeHost:{codexOnly:()=>true},window:{}});
-  vm.runInContext(fs.readFileSync('web/features/clients/client-navigation.js','utf8'),context);
-  const type=vm.runInContext('ClientNavigation',context),nav=Object.create(type.prototype);
-  nav.provider='codex';nav.cancelListSwipe=()=>{};nav.view={provider:'codex'};
-  nav.clients=[{id:'codex',enabled:true},{id:'claude',enabled:true}];
-  await nav.choose('claude');assert.equal(nav.provider,'codex');assert.equal(nav.clients[1].enabled,true);
+test('Android switches to DeepSeek Harness and restores its selection without changing enabled clients',async()=>{
+  const {nav}=fixture('BridgeMobile/0.1-Android');nav.provider=nav.view.provider='codex';
+  const before=JSON.stringify(nav.clients);await nav.choose('deepseek');
+  assert.equal(nav.provider,'deepseek');assert.equal(nav.view.provider,'deepseek');assert.equal(JSON.stringify(nav.clients),before);
+  nav.provider='codex';nav.restoreClientSelection();assert.equal(nav.provider,'deepseek');
+  nav.applyClients({clients:nav.clients});assert.equal(nav.provider,'deepseek');
+});
+
+test('Android keeps an enabled Harness accessible when Codex is disabled and never enables disabled clients',()=>{
+  const {nav}=fixture('BridgeMobile/0.1-Android');nav.provider=nav.view.provider='deepseek';
+  const clients=[{id:'codex',enabled:false},{id:'deepseek',enabled:true},{id:'claude',enabled:false}];
+  nav.applyClients({clients});assert.equal(nav.provider,'deepseek');assert.equal(JSON.stringify(nav.clients),JSON.stringify(clients));
 });
