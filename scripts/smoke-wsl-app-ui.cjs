@@ -15,7 +15,8 @@ async function connect(url){
 async function main(){
  const browser=process.env.CMB_BROWSER||'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';if(!process.env.CMB_FIXTURE_ONLY)assert.ok(fs.existsSync(browser),'Set CMB_BROWSER to a Chromium browser executable');
  const fixture=fs.mkdtempSync(path.join(root,'.tmp/wsl-app-ui-')),debugPort=await port(),wsl='wsl:'+'a'.repeat(32),sid='12345678-1234-4234-9234-123456789012',cliSid='12345678-1234-4234-9234-123456789014',sshSid='12345678-1234-4234-9234-123456789015',sshHost='fixture-ssh';
- const androidFixture=process.env.CMB_ANDROID_UI_FIXTURE==='1';
+ const listRecovery=process.env.CMB_LIST_RECOVERY_FIXTURE==='1';
+ const androidFixture=process.env.CMB_ANDROID_UI_FIXTURE==='1'||listRecovery;
  const navigationFixture=process.env.CMB_NAVIGATION_FIXTURE==='1'||androidFixture;
  const assets=JSON.parse(fs.readFileSync(path.join(root,'web/assets.json'))),requests=[],unexpected=[];let scanned=navigationFixture,enabled=navigationFixture,nativeEnabled=true,cdp;
  for(const match of fs.readFileSync(path.join(root,'bridge/api/assets.py'),'utf8').matchAll(/"(\/vendor\/[^"]+)": \("([^"]+)"/g))assets[match[1]]=match[2];
@@ -121,6 +122,21 @@ async function main(){
   const targets=await until(async()=>{const response=await fetch('http://127.0.0.1:'+debugPort+'/json/list');const value=await response.json();return value.find(item=>item.type==='page');});cdp=await connect(targets.webSocketDebuggerUrl);
   await cdp.call('Runtime.enable');await cdp.call('Page.enable');await cdp.call('Emulation.setDeviceMetricsOverride',{width:492,height:850,deviceScaleFactor:1,mobile:true});await cdp.call('Page.navigate',{url:origin});
   await until(()=>cdp.evaluate('typeof clientNavigation!=="undefined"&&clientNavigation.clients.length===3'));
+  if(listRecovery){
+   await until(()=>cdp.evaluate('!listLoading&&listRows.length>0'));
+   await cdp.evaluate(fs.readFileSync(path.join(root,'tests/browser/list-recovery.browser.js'),'utf8'));
+   const result=await cdp.evaluate('runListRecoveryTests()');
+   const screenshot=await cdp.call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(root,'.tmp/list-recovery-android.png'),Buffer.from(screenshot.data,'base64'));
+   for(const width of [390,844])for(const language of ['zh','en']){
+    await cdp.call('Emulation.setDeviceMetricsOverride',{width,height:850,deviceScaleFactor:1,mobile:true});
+    await cdp.evaluate('BridgeI18n.setLanguage('+JSON.stringify(language)+');loadList(true)');
+    assert.equal(await cdp.evaluate('(function(){const a=BridgeListSync.status.getBoundingClientRect(),b=document.getElementById("sessions").getBoundingClientRect();return a.left>=0&&a.right<=innerWidth+1&&b.top>=a.bottom;})()'),true,'Persistent hint bounds '+width+'/'+language);
+   }
+   result.viewportChecks=4;
+   await cdp.evaluate('finishListRecovery()');assert.deepEqual(cdp.errors,[]);
+   assert.equal(requests.some(row=>row.path.endsWith('/send')||row.path.endsWith('/respond')||row.path.endsWith('/stop')),false);
+   fs.writeFileSync(path.join(root,'.tmp/list-recovery-browser-result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));return;
+  }
   if(androidFixture){
    await until(()=>cdp.evaluate('typeof window.BridgePresentation!=="undefined"&&document.getElementById("android-ui-checks")'));
    await cdp.evaluate('document.getElementById("android-ui-checks").click()');

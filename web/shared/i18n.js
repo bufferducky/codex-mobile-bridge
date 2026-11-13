@@ -3375,6 +3375,15 @@ const en={
 "下拉刷新聊天列表":"Pull to refresh chats",
 "正在刷新聊天列表…":"Refreshing chats\u2026",
 "聊天列表已更新":"Chats updated",
+
+"连接暂时不稳定，聊天列表尚未更新，点击重试":"Connection interrupted. Chats have not updated. Tap to retry.",
+"聊天列表读取失败，请检查连接权限后重试":"Unable to read chats. Check access permissions and retry.",
+"上次更新":"Last updated",
+"连接详情":"Connection details",
+"连续失败":"Consecutive failures",
+"前台":"Foreground",
+"后台":"Background",
+
 "列表暂未更新，点击重试":"Could not refresh. Tap to retry.",
 "正在读取项目…":"Loading project\u2026",
 "命令输出":"Command output",

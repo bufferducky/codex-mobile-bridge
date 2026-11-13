@@ -33,7 +33,6 @@ let draftGateway='',codexDraftScope=null,codexDraftTouched=false,restoringCompos
 let listHostIds=[];
 let sourceFilterStamp='';
 let chatTimeline=null,reconnectFailure=null;
-const dismissedHostFaults=new Map();
 const submittedRequestIds=new Set();
 const sessionActivity=new SessionActivity();
 const recentInteractions=new Map();
@@ -62,25 +61,22 @@ let listLoading=0;
 let modelCatalogGeneration=0;const modelCatalogs=new Map();let catalogData={models:null,skills:null};let catalogResults={models:null,skills:null};let catalogTasks={models:null,skills:null};let selectedSkills=new Set(),invalidSkills=new Set(),skillIndex=new Map(),skillTotal=0,skillPages=[],skillQuery={q:'',offset:0,limit:200},skillSearchTimer,skillRequest=0;
 function el(tag,cls,text){const node=document.createElement(tag);if(cls)node.className=cls;if(text!==undefined)node.textContent=text;return node;}
 function toast(text){text=t(text);$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('toast').hidden=true,4200);}
-function renderHostErrors(hosts){
-  const root=$('host-errors'),gateway=(window.BridgeRelayBase||location.origin||'')+'|';
-  const active=new Set(hosts.map(host=>gateway+(host.host||host.label)));
-  for(const key of dismissedHostFaults.keys())if(key.startsWith(gateway)&&!active.has(key))dismissedHostFaults.delete(key);
-  root.replaceChildren();
-  for(const host of hosts){
-    const key=gateway+(host.host||host.label),fault=String(host.error||'');
-    if(dismissedHostFaults.get(key)===fault)continue;
-    const row=el('div','host-error-row');row.append(el('span','',host.label+'：'+fault));
-    const close=el('button','plain','×');close.type='button';close.setAttribute('aria-label',t('关闭连接错误'));
-    close.onclick=()=>{dismissedHostFaults.set(key,fault);row.remove();root.hidden=!root.childElementCount;};
-    row.append(close);root.append(row);
-  }
-  root.hidden=!root.childElementCount;
+function renderListConnection(sync){
+  const root=$('host-errors');root.replaceChildren();root.hidden=true;
+  if(!sync.failureVisible)return;
+  const details=el('details','list-connection-details'),summary=el('summary','',t('连接详情')),report=el('pre','');
+  const value=sync.diagnostics();
+  report.textContent=t('连续失败')+' '+value.consecutiveFailures+'\n'+value.recent.slice(-5).map(row=>[
+    row.host==='local'?t('此电脑'):row.host||t('此电脑'),row.path,row.status?'HTTP '+row.status:row.kind,
+    row.durationMs+' ms',row.foreground?t('前台'):t('后台'),new Date(row.at).toLocaleTimeString()
+  ].join(' · ')).join('\n');
+  details.append(summary,report);root.append(details);root.hidden=false;
 }
 function clearListSnapshot(){
   browserNavigation.invalidate();
   for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith('codex-list-v1:')||key?.startsWith('desktop-list-v1:'))sessionStorage.removeItem(key);}
   for(let i=localStorage.length-1;i>=0;i--){const key=localStorage.key(i);if(key?.startsWith('codex-list-v1:')||key?.startsWith('desktop-list-v1:'))localStorage.removeItem(key);}
+  if(typeof listSync!=='undefined')listSync.reset();
   listIdentity='';listFilterKey='';listHostIds=[];listRows=[];listOffset=0;listHasMore=false;listComplete=false;listReadFinished=false;availableSources=[];listRenderStamp='';listGeneration++;
 }
 function authLost(){hideWebhookUrl();clearListSnapshot();if(!$('app').hidden)document.dispatchEvent(new Event('bridge-auth-lost'));showLogin();}
@@ -155,7 +151,7 @@ function refreshEntryAccounts(){
 }
 clientNavigation.onApplicationChange=(previous,provider,{host}={})=>{
   if(host?.startsWith('wsl:')){preferredWslEntry=host;listSource='wsl';localStorage.setItem('codex-source-filter',listSource);}
-  listGeneration++;saveDraft();listRows=[];availableSources=[];listOffset=0;listHasMore=true;listComplete=false;listReadFinished=false;listFilterKey='';listRenderStamp='';sourceFilterStamp='';
+  listSync.reset();listGeneration++;saveDraft();listRows=[];availableSources=[];listOffset=0;listHasMore=true;listComplete=false;listReadFinished=false;listFilterKey='';listRenderStamp='';sourceFilterStamp='';
   $('sessions').replaceChildren();$('host-errors').hidden=true;chatTimeline?.dispose();chatTimeline=null;currentId=null;state=null;workbench.reset();$('chat').hidden=true;$('welcome').hidden=false;$('app').classList.remove('chat-open');if(!browserNavigation.enabled())history.replaceState(null,'',location.pathname);browserNavigation.sync();notificationPresence.refresh();
   $('new-chat').hidden=false;refreshEntryAccounts();renderSourceFilter();
   if(provider==='codex'&&!$('app').hidden)return loadList(true).catch(e=>toast(e.message));
@@ -388,14 +384,16 @@ function bindSessionMenu(button,chat,provider='codex'){
 }
 async function loadList(reset=false){
   if(!reset&&(listLoading||!listHasMore))return;
-  const generation=++listGeneration,offset=reset?0:listOffset,pinRead=sessionPins.capture();
+  const offset=reset?0:listOffset;
   const query=$('search').value,archived=$('archived').checked,source=listSource,mode=$('list-mode').value;
   const filter=JSON.stringify([query,archived,source,mode]);
+  const targetCount=reset?Math.max(100,listRows.length):offset+100;
+  return listSync.read(JSON.stringify([filter,targetCount]),async signal=>{
+  const generation=++listGeneration,pinRead=sessionPins.capture();
   if(reset&&filter!==listFilterKey){
     if(!restoreListSnapshot(filter)){listRows=[];availableSources=[];listOffset=0;listHasMore=false;listHostIds=[];listFilterKey=filter;}
     $('sessions').scrollTop=0;
   }
-  const targetCount=reset?Math.max(100,listRows.length):offset+100;
   listComplete=false;listReadFinished=false;renderList();listLoading++;if($('sessions-more'))$('sessions-more').disabled=true;
   const groups=new Map();for(const row of listRows)(groups.get(row.host)||groups.set(row.host,[]).get(row.host)).push(row);
   const sources=new Set(availableSources),freshSources=new Map(),errors=[];
@@ -407,13 +405,16 @@ async function loadList(reset=false){
   };
   const read=async host=>{
     const url='/api/sessions?scope=host&host='+encodeURIComponent(host)+'&q='+encodeURIComponent(query)+'&offset='+(targetCount-100)+'&archived='+archived+'&source='+source+'&order='+encodeURIComponent(mode);
+    const request=new AbortController(),started=Date.now();let timedOut=false;
+    const cancel=()=>request.abort();signal.addEventListener('abort',cancel,{once:true});if(signal.aborted)cancel();
+    const timeout=setTimeout(()=>{timedOut=true;request.abort();},15000);
     try{
-      const result=await api(url);if(generation!==listGeneration)return null;
+      const result=await api(url,undefined,request.signal);if(generation!==listGeneration||signal.aborted)return null;
       if(host==='local'){
         listHostIds=result.remoteHosts||[];
         for(const known of groups.keys())if(known!=='local'&&!listHostIds.includes(known))groups.delete(known);
       }
-      if(result.complete===false||result.unavailableHosts?.length)errors.push(...(result.unavailableHosts||[{host,label:host,error:t('暂不可用')}]));
+      if(result.complete===false||result.unavailableHosts?.length)errors.push(...(result.unavailableHosts?.length?result.unavailableHosts:[{host,label:host,error:t('暂不可用')}]).map(row=>({...row,durationMs:Date.now()-started,kind:'HostUnavailable'})));
       else{
         for(const row of result.sessions){const key=chatKey(row.id,row.host);row.recency=Math.max(row.recency,recentInteractions.get(key)||0);}
         for(const row of result.sessions)sessionPins.observe({provider:'codex',host:row.host,id:row.id},row.bridgePinned,pinRead);
@@ -422,13 +423,15 @@ async function loadList(reset=false){
         for(const item of result.availableSources||[])sources.add(item);
       }
       publish();return result;
-    }catch(error){if(generation===listGeneration){errors.push({host,label:host,error:error.message});publish();}return null;}
+    }catch(error){
+      if(generation===listGeneration&&!signal.aborted){errors.push({host,label:host==='local'?t('此电脑'):host,error:timedOut?'列表请求超时':error.message,status:timedOut?408:error.status,kind:timedOut?'TimeoutError':error.name,durationMs:Date.now()-started});publish();}return null;
+    }finally{clearTimeout(timeout);signal.removeEventListener('abort',cancel);}
   };
   try{
     const local=await read('local');
-    if(generation!==listGeneration)return;
+    if(generation!==listGeneration||signal.aborted)return false;
     await Promise.all(listHostIds.map(read));
-    if(generation!==listGeneration)return;
+    if(generation!==listGeneration||signal.aborted)return false;
     const merged=publish();listReadFinished=true;listComplete=errors.length===0;
     if(listComplete){
       availableSources=[...new Set([...freshSources.values()].flat())].sort();
@@ -436,11 +439,13 @@ async function loadList(reset=false){
       listOffset=listRows.length;listHasMore=merged.length>=targetCount;
       listQuery=query;listArchived=archived;listFilterKey=filter;
       if(!renderSourceFilter()){loadList(true).catch(e=>toast(e.message));return;}
-      saveListSnapshot(filter);clientNavigation.acknowledgeList('codex',{...local,unavailableHosts:[],complete:true});listSync.acknowledgeSuccess();
+      saveListSnapshot(filter);clientNavigation.acknowledgeList('codex',{...local,unavailableHosts:[],complete:true});
     }
-    renderHostErrors(errors);renderList();refreshActivity();if(!errors.length)window.BridgeFeatures?.prefetchChat();
-    if(errors.length)throw Error(errors[0].error);
+    renderList();refreshActivity();if(!errors.length)window.BridgeFeatures?.prefetchChat();
+    if(errors.length)throw Object.assign(Error(errors[0].error),{status:errors.find(row=>row.status===401)?.status||errors[0].status,hostErrors:errors});
+    return true;
   }finally{listLoading--;if($('sessions-more'))$('sessions-more').disabled=false;}
+  });
 }
 function loadMoreSessions(){
   const root=$('sessions');
@@ -499,7 +504,7 @@ $('session-diagnostics-refresh').onclick=loadSessionDiagnostics;
 $('session-diagnostics-copy').onclick=()=>window.BridgeClipboard.copyWithFeedback(()=>sessionDiagnosticsText,$('session-diagnostics-copy'),toast);
 $('session-diagnostics-export').onclick=event=>{if(BridgeHost.isNativeApp()&&window.BridgeMobileCapabilities?.diagnosticsExport!==true){event.preventDefault();return;}event.currentTarget.href=window.BridgeRelayURL?.(diagnosticsPath)||diagnosticsPath;};
 $('archived').onchange=()=>loadList(true).catch(e=>toast(e.message));
-const listSync=window.BridgeListSync=new ListSync({root:$('sessions'),status:$('list-sync'),refresh:()=>loadList(true),visible:()=>!$('app').hidden&&$('sidebar').getBoundingClientRect().width>0,ready:()=>!listLoading&&document.activeElement!==$('search')});
+const listSync=window.BridgeListSync=new ListSync({root:$('sessions'),status:$('list-sync'),refresh:()=>loadList(true),visible:()=>!$('app').hidden&&$('sidebar').getBoundingClientRect().width>0,ready:()=>!listLoading&&document.activeElement!==$('search'),onState:sync=>renderListConnection(sync),hasRows:()=>listRows.length>0});
 const contextUsageControl=new ContextUsageControl();$('permissions-button').after(contextUsageControl.button);
 let newChatProjects=[],newChatEnvironments=[],newChatCanBrowse=false,newChatEntry='desktop',newChatPreferredHost='local',creatingChat=false,approvalBusy=0;
 const newChatUrl=path=>path+(newChatEntry.startsWith('wsl:')?'?entry='+encodeURIComponent(newChatEntry):'');

@@ -176,5 +176,5 @@ test('Codex header Back returns to list; native Back walks file parents and chat
   assert.equal(workbench.backCalls,3);assert.equal(session.active,'chat');assert.equal(app.classList.contains('chat-open'),true);
   assert.equal(ui.window.BridgeNavigation.back(),true);
   assert.equal(workbench.backCalls,4);assert.equal(workbench.locateCancels,2);
-  assert.equal(app.classList.contains('chat-open'),false);assert.equal(listRequests(),initialLists+2);
+  assert.equal(app.classList.contains('chat-open'),false);assert.equal(listRequests(),initialLists+1,'Back handlers share the list refresh already in flight');
 });

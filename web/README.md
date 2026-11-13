@@ -74,3 +74,22 @@ Codex 时间线中的独立 `Reconnecting... 1/5` 等自动重连记录显示为
 审查卡片、后续操作、审查链接和选中片段引用见 [使用说明](../docs/output-interactions.md)。`shared/output-directives.js` 仅解析完整标记，文件入口仍依赖服务器授权的 artifact；`features/chat/composer-quotes.js` 观察原生选区并复用 `ComposerDrafts`，引用和操作按钮不自动发送。
 
 实时执行状态由 `ChatActivityStatus` 按原生元数据持续更新；`shared/presentation-content.css` 将活动摘要限制为最多五个视觉行，超过时显示省略号。短活动使用实际高度，右侧耗时独立显示；命令元数据和执行详情保留原文。此样式由网关提供，手机重新加载连接页面后生效，无需更新原生 App。浏览器检查同时覆盖运行中/已完成的长脚本与随后短活动的高度恢复。
+
+## 聊天列表的连接恢复
+
+Codex 列表统一使用 `ListSync.read()` 协调读取与失败提示。同一筛选/目标页数的并发刷新共享请求；筛选变化取消旧读取，代际检查继续阻止旧结果覆盖当前页面。每个主机的读取有 15 秒超时；成功来源仍更新，失败来源保留之前的行，只有所有来源完整成功才更新持久快照与列表读取确认。
+
+```mermaid
+flowchart LR
+  A[启动 / 下拉 / 前台恢复 / 自动刷新] --> B[ListSync 合并相同列表读取]
+  B --> C[逐主机读取 GET /api/sessions]
+  C -->|完整成功| D[更新快照与上次成功时间，清除提示]
+  C -->|暂时失败| E[保留已有行，按退避间隔重试]
+  E --> B
+  E -->|连续三次 / 手动刷新 / 无列表| F[中文重试提示与连接详情]
+  C -->|401| G[原登录失效流程]
+```
+
+自动读取失败按 1、3、8、15、30 秒退避，之后保持 30 秒；成功后回到 15 秒正常刷新。后台暂停定时与当前 Codex 列表读取，回到前台或网络恢复时经过同一入口；保留搜索、滚动位置与可见性限制。400/403/404/405/409/422 不自动循环重试。`ListSync` 对会话列表之外的发送、审批、停止和账号操作不提供重试。
+
+持续错误的详情只显示最近 5 条受限元数据，内存最多保存 20 条；不记录查询串、Cookie、令牌、聊天或请求体。`window.BridgeListSync.diagnostics()` 提供相同的读取诊断。登录退出、切换客户端时清理当前列表状态；恢复成功自动收起详情。覆盖路径见 `tests/list-refresh.test.cjs`、`tests/list-sync.test.cjs` 与 `tests/browser/list-recovery.browser.js`。真实 Android 页面夹具可运行 `CMB_LIST_RECOVERY_FIXTURE=1 CMB_BROWSER=<Chromium 路径> node scripts/smoke-wsl-app-ui.cjs`，只使用合成 API，不调用模型。

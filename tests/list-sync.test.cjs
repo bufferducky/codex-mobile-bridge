@@ -3,17 +3,17 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 
 function fixture(){
   let now=0,id=0,calls=0,ready=true,visible=true,refresh=async()=>{};
-  const timers=new Map(),frames=new Map(),events={};
+  const timers=new Map(),frames=new Map(),events={},documentEvents={},windowEvents={};
   const node=()=>({hidden:true,textContent:'',scrollTop:0,style:{setProperty(key,value){this[key]=value;}},classList:{values:new Set(),add(key){this.values.add(key);},remove(key){this.values.delete(key);},toggle(key,on){on?this.add(key):this.remove(key);}},setAttribute(key,value){this[key]=value;},addEventListener(type,fn){(events[type]??=[]).push(fn);}});
   const root=node(),status=node();root.children=[];let writes=0,text='';Object.defineProperty(status,'textContent',{get:()=>text,set:value=>{writes++;text=value;}});
-  const context=vm.createContext({BridgeI18n:{t:value=>value},document:{hidden:false,addEventListener(){}},window:{addEventListener(){}},
+  const context=vm.createContext({BridgeI18n:{t:value=>value},document:{hidden:false,addEventListener(name,fn){documentEvents[name]=fn;}},window:{addEventListener(name,fn){windowEvents[name]=fn;}},
     setTimeout:(fn,delay)=>{timers.set(++id,{fn,at:now+delay});return id;},clearTimeout:key=>timers.delete(key),requestAnimationFrame:fn=>{frames.set(++id,fn);return id;},cancelAnimationFrame:key=>frames.delete(key)});
   vm.runInContext(fs.readFileSync(require.resolve('../web/features/chat/list-sync.js'),'utf8'),context);
   const sync=new (vm.runInContext('ListSync',context))({root,status,visible:()=>visible,ready:()=>ready,refresh:async()=>{calls++;return await refresh();}});
   const frame=()=>{const tasks=[...frames.values()];frames.clear();for(const fn of tasks)fn();};
   const advance=ms=>{const end=now+ms;while(true){const next=[...timers].filter(([,timer])=>timer.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;now=next[1].at;timers.delete(next[0]);next[1].fn();}now=end;};
   const touch=(type,y,x=30,count=1)=>{const event={touches:['touchend','touchcancel'].includes(type)?[]:Array.from({length:count},()=>({clientX:x,clientY:y})),preventDefault(){this.prevented=true;}};for(const fn of events[type]||[])fn(event);return event;};
-  return {sync,root,status,frame,advance,touch,get calls(){return calls;},get writes(){return writes;},setReady:value=>{ready=value;},setVisible:value=>{visible=value;},setRefresh:fn=>{refresh=fn;}};
+  return {sync,root,status,frame,advance,touch,timers,documentEvents,windowEvents,setHidden:value=>{context.document.hidden=value;documentEvents.visibilitychange();},get calls(){return calls;},get writes(){return writes;},setReady:value=>{ready=value;},setVisible:value=>{visible=value;},setRefresh:fn=>{refresh=fn;}};
 }
 const settled=()=>new Promise(setImmediate);
 
@@ -56,7 +56,7 @@ test('busy, hidden and unavailable lists reject pull gestures and failure remain
   const ui=fixture();ui.setReady(false);ui.touch('touchstart',20);ui.touch('touchmove',110);ui.frame();assert.equal(ui.status.hidden,true);ui.touch('touchend',110);
   ui.setReady(true);ui.setVisible(false);ui.touch('touchstart',20);ui.touch('touchmove',110);ui.frame();assert.equal(ui.status.hidden,true);ui.touch('touchend',110);assert.equal(ui.calls,0);
   ui.setVisible(true);let finish;ui.setRefresh(()=>new Promise(resolve=>{finish=resolve;}));const pending=ui.sync.update(true);ui.touch('touchstart',20);ui.touch('touchmove',110);ui.touch('touchend',110);assert.equal(ui.calls,1);finish();await pending;
-  ui.setRefresh(async()=>{throw Error('offline');});await ui.sync.update(true);ui.advance(5000);assert.equal(ui.status.hidden,false);assert.match(ui.status.textContent,/点击重试/);
+  ui.setRefresh(async()=>{throw Error('offline');});await ui.sync.update(true);ui.advance(500);assert.equal(ui.status.hidden,false);assert.match(ui.status.textContent,/点击重试/);
   ui.setRefresh(async()=>{});ui.status.onclick();await settled();assert.equal(ui.calls,3);ui.advance(800);assert.equal(ui.status.hidden,true);
 });
 
@@ -90,4 +90,28 @@ test('automatic success hides an old error when the list reader acknowledges suc
 test('stale refresh results never dismiss current feedback or claim success',async()=>{
  const ui=fixture();let finish;ui.setRefresh(()=>new Promise(resolve=>finish=resolve));const stale=ui.sync.update(true);ui.sync.reset();ui.setRefresh(async()=>{throw Error('new failure');});await ui.sync.update(true);finish(false);await stale;
  assert.equal(ui.status.hidden,false);assert.match(ui.status.textContent,/点击重试/);
+});
+
+
+test('automatic retries back off through 1, 3, 8, 15 and 30 seconds, then recover to the normal interval',async()=>{
+ const ui=fixture();ui.root.children.push({});ui.setRefresh(async()=>{throw TypeError('Failed to fetch');});await ui.sync.update();
+ for(const [index,delay] of [1000,3000,8000,15000,30000,30000].entries()){
+  assert.ok([...ui.timers.values()].some(timer=>timer.at>=delay),'retry delay '+delay);ui.advance(delay);await settled();assert.equal(ui.calls,index+2);
+ }
+ ui.setRefresh(async()=>{});await ui.sync.update(true);ui.advance(800);assert.equal(ui.status.hidden,true);assert.equal(ui.sync.automaticFailures,0);
+ const before=ui.calls;ui.advance(14200);await settled();assert.equal(ui.calls,before+1);
+});
+
+test('hidden pages pause retry timers and visibility or online events share one active refresh',async()=>{
+ const ui=fixture();ui.root.children.push({});ui.setRefresh(async()=>{throw TypeError('offline');});await ui.sync.update();
+ ui.setHidden(true);ui.advance(60000);await settled();assert.equal(ui.calls,1);
+ let finish;ui.setRefresh(()=>new Promise(resolve=>finish=resolve));ui.setHidden(false);ui.windowEvents.online();ui.windowEvents.focus();assert.equal(ui.calls,2);
+ finish();await settled();assert.equal(ui.sync.automaticFailures,0);
+});
+
+test('authentication and permanent HTTP failures do not enter the automatic retry loop',async()=>{
+ for(const status of [401,403,404,422]){
+  const ui=fixture();ui.root.children.push({});ui.setRefresh(async()=>{throw Object.assign(Error('denied'),{status});});await ui.sync.update();ui.advance(60000);await settled();
+  assert.equal(ui.calls,1);assert.equal(ui.sync.retryable,false);assert.equal(ui.sync.failureVisible,status!==401);
+ }
 });

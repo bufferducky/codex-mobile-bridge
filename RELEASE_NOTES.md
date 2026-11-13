@@ -1,3 +1,28 @@
+<a id="v2117"></a>
+
+## v2.1.17 · 手机聊天列表的断网恢复与提示优化
+
+修复 Android 上偶发一次请求失败就显示 `local: Failed to fetch` 的问题。桌面与手机版本 **2.1.17**，手机构建号 **50**；提供 **Mac Apple Silicon / Intel 和 Android**，沿用已有应用身份与签名。
+
+### 改进
+
+- **短暂失败安静恢复**：保留已加载聊天，按 1、3、8、15、30 秒退避重试，之后保持 30 秒。已有内容连续失败三次才显示“连接暂时不稳定，聊天列表尚未更新，点击重试”；首次没有列表、手动刷新失败和权限错误会及时反馈。
+- **同一列表只读一次**：启动、返回列表、下拉刷新、前台和网络恢复共用读取协调器。同一筛选与目标页数共享在途请求；新筛选取消旧读取，每个主机有 15 秒超时。主动取消不计作网络错误。
+- **持续错误说清楚**：显示上次成功更新时间，可展开连接详情查看受限的接口路径、错误类型/HTTP 状态、耗时、前后台状态和时间。持续提示预留空间，不遮住第一条聊天；恢复后自动清除。
+- **保留部分成功与原有约束**：可用主机继续更新，失败主机保留旧行；完整成功后才确认列表读取与更新持久快照。后台暂停读取，登录失效继续原登录流程，权限类失败不自动循环重试。消息发送、审批等写操作不参与本次重试。
+
+### 更新与验证
+
+更新电脑网关到 **2.1.17**，在手机退出当前电脑连接并重新进入即可加载新页面；已有 Android App 无需为此重装，同时提供同签名 APK。此前恢复的 DeepSeek Harness 切换入口保持可用。
+
+回归覆盖生产列表读取、一次/持续失败、自动退避、并发合并、筛选取消、部分主机失败、旧快照保留、登录失效与前后台恢复。隔离 Chromium 加载生产 Android 页面，实际验证中文提示、重试、恢复、连接详情及提示不遮住首条聊天。安装包另核验架构、签名、包内资源和下载完整性；浏览器模拟不等同于 Android 真机通过。
+
+### English
+
+Improve phone chat-list recovery: preserve loaded chats during transient failures, retry reads with 1/3/8/15/30-second backoff, and show persistent failures after three attempts. Explicit refreshes, empty initial lists and permission failures receive immediate feedback. Coalesce matching list reads, cancel superseded filters, bound host requests to 15 seconds, pause in the background and clear feedback after recovery. Preserve partial-host results, durable snapshots and the existing authentication flow. Bounded connection details exclude queries and credentials; persistent hints reserve space above chats. Native writes are never retried. Update the Mac gateway and reopen the phone connection; existing Android apps remain compatible. Ships macOS arm64/x64 and signed Android build 50.
+
+---
+
 <a id="v2116"></a>
 
 ## v2.1.16 · 恢复安卓 DeepSeek Harness 入口

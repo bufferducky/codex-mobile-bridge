@@ -145,18 +145,15 @@ test('connection diagnostics is secondary to settings and keeps the original exp
   assert.match(app,/openingAccess\.source==='desktop'&&openingAccess\.canReconnect/);
   assert.match(app,/const diagnosticsPath='\/api\/sessions\/diagnostics'/);
 });
-test('dismissed SSH faults stay hidden on refresh, then return after recovery or on another gateway',()=>{
-  const nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,{children:[],replaceChildren(){this.children=[];},append(child){this.children.push(child);child.remove=()=>{this.children=this.children.filter(item=>item!==child);};},get childElementCount(){return this.children.length;}});return nodes.get(id);};
-  const ctx={$,window:{BridgeRelayBase:'/relay/a'},location:{origin:'https://bridge.example'},dismissedHostFaults:new Map(),t:value=>value,el:(tag,cls,text)=>({tag,cls,textContent:text,children:[],append(child){this.children.push(child);},setAttribute(){}})};
-  vm.createContext(ctx);vm.runInContext(extract('function renderHostErrors(hosts){','function authLost()'),ctx);
-  const fault=[{host:'remote-1',label:'Remote',error:'SSH unavailable'}];ctx.renderHostErrors(fault);
-  assert.equal($('host-errors').childElementCount,1);
-  $('host-errors').children[0].children[1].onclick();ctx.renderHostErrors(fault);
-  assert.equal($('host-errors').childElementCount,0);
-  ctx.window.BridgeRelayBase='/relay/b';ctx.renderHostErrors(fault);
-  assert.equal($('host-errors').childElementCount,1);
-  ctx.window.BridgeRelayBase='/relay/a';ctx.renderHostErrors([]);ctx.renderHostErrors(fault);
-  assert.equal($('host-errors').childElementCount,1);
+test('list connection details expose bounded read metadata and disappear after recovery',()=>{
+  const root={children:[],replaceChildren(){this.children=[];},append(child){this.children.push(child);}};
+  const ctx={$:()=>root,t:value=>value,el:(tag,cls,text)=>({tag,cls,textContent:text,children:[],append(...children){this.children.push(...children);}})};
+  vm.createContext(ctx);vm.runInContext(extract('function renderListConnection(sync){','function clearListSnapshot(){'),ctx);
+  const row={at:Date.now(),path:'/api/sessions',host:'local',status:502,kind:'TypeError',durationMs:123,foreground:true,secret:'private-token',query:'private-search'};
+  const sync={failureVisible:true,diagnostics:()=>({recent:Array(20).fill(row),consecutiveFailures:3})};ctx.renderListConnection(sync);
+  assert.equal(root.hidden,false);const text=root.children[0].children[1].textContent;
+  assert.match(text,/此电脑.*HTTP 502.*123 ms/);assert.doesNotMatch(text,/private-token|private-search/);assert.equal(text.split('\n').length,6);
+  sync.failureVisible=false;ctx.renderListConnection(sync);assert.equal(root.hidden,true);assert.equal(root.children.length,0);
 });
 test('diagnostics summary uses only aggregate fields and old native apps cannot export',async()=>{
   const nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,disabled:false,textContent:'',close(){},showModal(){},children:[]});return nodes.get(id);};

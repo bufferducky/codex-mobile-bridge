@@ -19,7 +19,7 @@ async function fixture({sessionStore=new Map(),localStore=new Map(),skipStartup=
   let nextPost,nextGet;
   const response=(data,status=200)=>({ok:status===200,status,json:async()=>data});
   let listResponse=()=>response({sessions:[],unavailableHosts:[]}),knownRows=[];
-  const context=vm.createContext({ClientNavigation:class{constructor(){this.provider="codex";this.clients=[];}async refresh(){}acknowledgeList(provider,value){acknowledgements.push({provider,value});}},DesktopSessionsView:class{bindListCache(){}previewCachedList(){return false;}clear(){}},Workbench:class{constructor(){this.current={};}open(){}reset(){}setThumbnails(){}relabel(){}},navigator:{userAgent:'test'},document:{addEventListener(){},documentElement:{classList:{contains(){return false;}}},getElementById:id=>nodes.get(id),querySelector:selector=>selector==='.archive-filter'?archiveFilter:{disabled:false},querySelectorAll:selector=>selector==='[data-notification-channel]'?channelButtons:[],createElement:node},
+  const context=vm.createContext({AbortController,ClientNavigation:class{constructor(){this.provider="codex";this.clients=[];}async refresh(){}acknowledgeList(provider,value){acknowledgements.push({provider,value});}},DesktopSessionsView:class{bindListCache(){}previewCachedList(){return false;}clear(){}},Workbench:class{constructor(){this.current={};}open(){}reset(){}setThumbnails(){}relabel(){}},navigator:{userAgent:'test'},document:{addEventListener(){},documentElement:{classList:{contains(){return false;}}},getElementById:id=>nodes.get(id),querySelector:selector=>selector==='.archive-filter'?archiveFilter:{disabled:false},querySelectorAll:selector=>selector==='[data-notification-channel]'?channelButtons:[],createElement:node},
     renderMarkdown(){},window:{addEventListener(){}},localStorage,sessionStorage:scopedStorage,
     location:{hash:'',pathname:'/',search:''},history:{state:null,replaceState(state){this.state=state;},pushState(state){this.state=state;},back(){}},confirm:()=>true,setTimeout(){},clearTimeout(){},setInterval(){},
     ChatTimeline:class{constructor(){this.abort=new AbortController();}async start(){}dispose(){this.abort.abort();}relabel(){}refreshActions(){}},
@@ -475,7 +475,7 @@ test('failed continuation retains rows and retries the same page on a new scroll
   Object.assign(root,{clientHeight:400,scrollHeight:12000});
   ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');
   ui.setList(()=>ui.response({error:'Offline'},503));root.scrollTop=11500;root.dispatchEvent({type:'scroll'});await new Promise(setImmediate);
-  assert.equal(root.children.filter(row=>row.dataset?.id).length,100);assert.equal(ui.nodes.get('toast').textContent,'Offline');assert.equal(ui.listRequests.length,2);
+  assert.equal(root.children.filter(row=>row.dataset?.id).length,100);assert.notEqual(ui.nodes.get('toast').textContent,'Offline');assert.equal(ui.run('listSync.automaticFailures'),1);assert.equal(ui.listRequests.length,2);
   ui.setList(()=>ui.response(sessionPage(100,10)));root.dispatchEvent({type:'scroll'});await new Promise(setImmediate);
   assert.equal(ui.listRequests[2],ui.listRequests[1]);assert.equal(root.children.filter(row=>row.dataset?.id).length,110);
 });
@@ -484,7 +484,7 @@ test('failed refresh keeps the loaded page available for scroll continuation',as
   const ui=await fixture(),root=ui.nodes.get('sessions');ui.nodes.get('app').hidden=false;
   Object.assign(root,{clientHeight:400,scrollHeight:12000});
   ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');
-  ui.setList(()=>ui.response({error:'Offline'},503));await assert.rejects(ui.run('loadList(true)'),/Offline/);
+  ui.setList(()=>ui.response({error:'Offline'},503));assert.equal(await ui.run('loadList(true)'),false);
   assert.equal(root.children.filter(row=>row.dataset?.id).length,100);
   ui.setList(()=>ui.response(sessionPage(100,20)));root.scrollTop=11500;root.dispatchEvent({type:'scroll'});await new Promise(setImmediate);
   assert.match(ui.listRequests[2]||'',/offset=100/);assert.equal(root.children.filter(row=>row.dataset?.id).length,120);
@@ -496,7 +496,7 @@ test('new filters start at the top, including a retry after their first request 
   ui.setList(()=>ui.response(sessionPage(0,100)));await ui.run('loadList(true)');root.scrollTop=9000;
   await ui.run('loadList(true)');assert.equal(root.scrollTop,9000);
   ui.nodes.get('search').value='new';ui.setList(()=>ui.response({error:'Offline'},503));
-  await assert.rejects(ui.run('loadList(true)'),/Offline/);
+  assert.equal(await ui.run('loadList(true)'),false);
   root.dispatchEvent({type:'scroll'});assert.equal(ui.listRequests.length,3);
   ui.setList(()=>ui.response(sessionPage(200,20)));await ui.run('loadList(true)');assert.equal(root.scrollTop,0);
   root.scrollTop=1200;ui.nodes.get('archived').checked=true;await ui.run('loadList(true)');assert.equal(root.scrollTop,0);
@@ -605,22 +605,21 @@ test('partial empty and failed remote never claim no chats or discard earlier ro
     :new Promise(resolve=>{release=()=>resolve(ui.response({sessions:[],availableSources:[],unavailableHosts:[{host:'remote-a',label:'Remote A',error:'Offline'}],complete:false}));}));
   const pending=ui.run('loadList(true)');await new Promise(setImmediate);
   assert.equal(root.children[0].dataset.id,'saved');assert.equal(ui.run('listComplete'),false);
-  release();await assert.rejects(pending,/Offline/);
+  release();assert.equal(await pending,false);
   assert.equal(root.children[0].dataset.id,'saved');assert.equal(ui.run('listOffset'),1);
   assert.equal(ui.run('listComplete'),false);assert.equal(ui.acknowledgements.length,1);
 });
 
-test('refresh keeps a dismissed SSH fault dismissed while that host is pending',async()=>{
+test('pending SSH refresh does not expose raw faults and final failure provides connection details',async()=>{
   const ui=await fixture(),root=ui.nodes.get('host-errors');ui.nodes.get('app').hidden=false;
-  ui.run("dismissedHostFaults.set('|remote-a','Offline')");
   let release;
   ui.setList(url=>new URL(url,'http://test').searchParams.get('host')==='local'
     ?ui.response({sessions:[],remoteHosts:['remote-a'],availableSources:[],unavailableHosts:[],complete:true})
     :new Promise(resolve=>{release=()=>resolve(ui.response({sessions:[],availableSources:[],unavailableHosts:[{host:'remote-a',label:'Remote A',error:'Offline'}],complete:false}));}));
   const pending=ui.run('loadList(true)');await new Promise(setImmediate);
-  assert.equal(ui.run("dismissedHostFaults.get('|remote-a')"),'Offline');
-  release();await assert.rejects(pending,/Offline/);
-  assert.equal(root.hidden,true);assert.equal(ui.run("dismissedHostFaults.get('|remote-a')"),'Offline');
+  assert.equal(root.hidden,true);
+  release();assert.equal(await pending,false);
+  assert.equal(root.hidden,false);assert.equal(root.children[0].children[0].textContent,'连接详情');assert.doesNotMatch(root.children[0].children[1].textContent,/Offline/);
 });
 
 test('list snapshot is restored only after matching authenticated gateway and session',async()=>{
@@ -685,10 +684,10 @@ test('failed and incomplete Codex refreshes retain the last complete durable sna
   ui.run(`listIdentity=listAuthIdentity({authenticated:true,listCacheIdentity:'${'a'.repeat(64)}'})`);
   ui.setList(()=>ui.response({sessions:[{id:'saved',host:'local',title:'Saved',projectKey:'p',projectName:'P',recency:1}],remoteHosts:[],availableSources:['desktop'],unavailableHosts:[],complete:true}));
   await ui.run('loadList(true)');const saved=[...localStore.values()][0];
-  ui.setList(()=>ui.response({error:'offline'},503));await assert.rejects(ui.run('loadList(true)'),/offline/);
+  ui.setList(()=>ui.response({error:'offline'},503));assert.equal(await ui.run('loadList(true)'),false);
   assert.equal([...localStore.values()][0],saved);
   ui.setList(()=>ui.response({sessions:[],remoteHosts:[],availableSources:[],unavailableHosts:[{host:'local',error:'partial'}],complete:false}));
-  await assert.rejects(ui.run('loadList(true)'),/partial/);assert.equal([...localStore.values()][0],saved);
+  assert.equal(await ui.run('loadList(true)'),false);assert.equal([...localStore.values()][0],saved);
 });
 
 test('HTTP 401 clears durable Codex snapshots while transient list failure does not',async()=>{
@@ -696,7 +695,7 @@ test('HTTP 401 clears durable Codex snapshots while transient list failure does 
   ui.run(`listIdentity=listAuthIdentity({authenticated:true,listCacheIdentity:'${'a'.repeat(64)}'})`);
   ui.setList(()=>ui.response({sessions:[{id:'saved',host:'local',title:'Saved',projectKey:'p',projectName:'P',recency:1}],remoteHosts:[],availableSources:['desktop'],unavailableHosts:[],complete:true}));
   await ui.run('loadList(true)');assert.equal([...localStore.keys()].some(key=>key.startsWith('codex-list-v1:')),true);
-  ui.setList(()=>ui.response({error:'temporary'},503));await assert.rejects(ui.run('loadList(true)'),/temporary/);
+  ui.setList(()=>ui.response({error:'temporary'},503));assert.equal(await ui.run('loadList(true)'),false);
   assert.equal([...localStore.keys()].some(key=>key.startsWith('codex-list-v1:')),true);
   ui.setList(()=>ui.response({error:'login required'},401));await ui.run('loadList(true)');
   assert.equal([...localStore.keys()].some(key=>key.startsWith('codex-list-v1:')),false);
@@ -740,9 +739,9 @@ test('recent pins and project inventory have separate snapshots during offline f
   ui.nodes.get('list-mode').value='project';await ui.run('loadList(true)');const projectFilter=ui.run('currentListFilter()');
   assert.notEqual(recentFilter,projectFilter);assert.equal([...ui.localStore.keys()].filter(key=>key.startsWith('codex-list-v1:')).length,2);
   ui.setList(()=>{throw Error('offline');});
-  ui.nodes.get('list-mode').value='recent';await assert.rejects(ui.run('loadList(true)'),/offline/);
+  ui.nodes.get('list-mode').value='recent';assert.equal(await ui.run('loadList(true)'),false);
   assert.equal(ui.run('listRows[0].id'),'old-pin');
-  ui.nodes.get('list-mode').value='project';await assert.rejects(ui.run('loadList(true)'),/offline/);
+  ui.nodes.get('list-mode').value='project';assert.equal(await ui.run('loadList(true)'),false);
   assert.equal(ui.run('listRows[0].id'),'recent-project');
 });
 
