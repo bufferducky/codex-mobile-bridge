@@ -4,6 +4,140 @@ import {createServer} from 'node:http';
 import {readFile,writeFile,rename,unlink,realpath,stat} from 'node:fs/promises';
 import {timingSafeEqual,randomUUID} from 'node:crypto';
 export const inject=['sessionController','sessionSkillCatalog','permissionPresets','agents','workspaceRegistry'];
+
+// Consume the native process-local stream without following or activating a
+// Session. A missing frame invalidates the preview until the next complete
+// attempt; durable history remains the source of truth.
+export class LiveAssistantPreview {
+  constructor({maxSessions=32,maxBytes=256*1024,maxBlocks=128}={}){
+    Object.assign(this,{maxSessions,maxBytes,maxBlocks});
+    this.sessions=new Map();this.closed=false;
+  }
+  put(sid,state){
+    this.sessions.delete(sid);this.sessions.set(sid,state);
+    while(this.sessions.size>this.maxSessions)this.sessions.delete(this.sessions.keys().next().value);
+  }
+  sessionEvent(session,event){
+    const sid=session?.id;
+    if(this.closed||typeof sid!=='string'||!sid||sid.length>512||!['turn/start','turn/end'].includes(event?.type)||
+       !Number.isSafeInteger(event.data?.turn)||event.data.turn<0||!Number.isSafeInteger(event.time)||event.time<=0)return;
+    const previous=this.sessions.get(sid);
+    if(event.type==='turn/end'){
+      if(previous?.session===session&&previous.turn===event.data.turn)this.sessions.delete(sid);
+      return;
+    }
+    this.put(sid,{session,turn:event.data.turn,startedAt:event.time});
+  }
+  accept({agent,frame}={}){
+    const sid=agent?.session?.id;
+    if(this.closed||typeof sid!=='string'||!sid||sid.length>512||!frame||typeof frame!=='object')return;
+    const previous=this.sessions.get(sid);
+    if(frame.type!=='start'&&previous?.agent&&previous.agent!==agent)return;
+    if(!Number.isSafeInteger(frame.revision)||frame.revision<1||
+       typeof frame.attemptId!=='string'||!frame.attemptId||frame.attemptId.length>1024){this.sessions.delete(sid);return;}
+    if(frame.type==='start'){
+      if(!Number.isSafeInteger(frame.turn)||frame.turn<0||!Number.isSafeInteger(frame.step)||frame.step<0||
+         previous?.agent===agent&&frame.revision!==previous.revision+1){this.sessions.delete(sid);return;}
+      const startedAt=previous?.session===agent.session&&previous.turn===frame.turn?previous.startedAt:undefined;
+      this.put(sid,{agent,session:agent.session,turn:frame.turn,step:frame.step,startedAt,
+        attemptId:frame.attemptId,generation:randomUUID(),revision:frame.revision,index:0,
+        blocks:new Map(),bytes:0,kind:'thinking'});
+      return;
+    }
+    const state=previous;
+    if(!state?.agent||state.agent!==agent||state.attemptId!==frame.attemptId||state.committedSeq!==undefined||
+       frame.revision!==state.revision+1||!Number.isSafeInteger(frame.index)||frame.index!==state.index){
+      this.sessions.delete(sid);return;
+    }
+    state.revision=frame.revision;
+    if(frame.type==='chunk'){
+      if(!Number.isSafeInteger(frame.time)||frame.time<=0||!this.chunk(state,frame.chunk)){this.sessions.delete(sid);return;}
+      state.index++;
+    }else if(frame.type==='end'){
+      if(frame.outcome?.kind!=='committed'||frame.outcome.eventType!=='assistant/message'||
+         !Number.isSafeInteger(frame.outcome.seq)||frame.outcome.seq<0){this.sessions.delete(sid);return;}
+      state.committedSeq=frame.outcome.seq;
+    }else this.sessions.delete(sid);
+  }
+  chunk(state,chunk){
+    if(!chunk||typeof chunk!=='object')return false;
+    if(chunk.type==='usage')return true;
+    if(chunk.type==='finish')return !['error','aborted'].includes(chunk.reason?.kind);
+    if(!Number.isSafeInteger(chunk.index)||chunk.index<0)return false;
+    let block=state.blocks.get(chunk.index);
+    const ensure=type=>{
+      if(!block){
+        if(state.blocks.size>=this.maxBlocks)return false;
+        block={type,text:'',closed:false};state.blocks.set(chunk.index,block);
+      }
+      return true;
+    };
+    const replace=text=>{
+      const bytes=Buffer.byteLength(text,'utf8'),total=state.bytes-Buffer.byteLength(block.text,'utf8')+bytes;
+      if(total>this.maxBytes)return false;
+      state.bytes=total;block.text=text;return true;
+    };
+    if(chunk.type==='block-start')return typeof chunk.blockType==='string'&&chunk.blockType.length<=64&&ensure(chunk.blockType);
+    if(chunk.type==='text-delta'||chunk.type==='reasoning-delta'){
+      const type=chunk.type==='text-delta'?'text':'reasoning';
+      if(typeof chunk.text!=='string'||!ensure(type))return false;
+      if(block.closed)return true;
+      if(block.type!==type||Buffer.byteLength(chunk.text,'utf8')>this.maxBytes)return false;
+      if(!replace(block.text+chunk.text))return false;
+      if(chunk.text)state.kind=type==='text'?'replying':'thinking';
+      return true;
+    }
+    if(chunk.type==='tool-call-delta'){
+      if(!ensure('tool-call'))return false;
+      // Tool arguments, provider replay state and usage never enter previews.
+      if(!block.closed)state.kind='thinking';
+      return true;
+    }
+    if(chunk.type==='block-end'){
+      const type=chunk.block?.type;
+      if(typeof type!=='string'||type.length>64||!ensure(type))return false;
+      if(block.closed)return true;
+      const text=['text','reasoning'].includes(type)?chunk.block.text:'';
+      if(typeof text!=='string'||!replace(text))return false;
+      block.type=type;block.closed=true;
+      if(text)state.kind=type==='text'?'replying':'thinking';
+      return true;
+    }
+    return false;
+  }
+  snapshot(sid,{running,asOfSeq,agent,records=[]}={}){
+    const state=this.sessions.get(sid),empty={liveMessages:[]};
+    if(!state?.agent)return empty;
+    const overtaken=records.some(({event}={})=>{
+      const data=event?.data;
+      if(!Number.isSafeInteger(data?.turn)||data.turn<0)return false;
+      if(data.turn>state.turn)return true;
+      if(data.turn!==state.turn)return false;
+      if(event.type==='turn/end')return true;
+      if(Number.isSafeInteger(data.step)&&data.step>state.step)return true;
+      // Committed assistant/tool rows prove that this same step has moved past
+      // generation even if its transient end frame was missed.
+      return data.step===state.step&&['assistant/message','tool/call','tool/result'].includes(event.type);
+    });
+    if(running!==true||agent!==state.agent||overtaken||state.committedSeq!==undefined&&asOfSeq>=state.committedSeq){
+      this.sessions.delete(sid);return empty;
+    }
+    const liveMessages=[];
+    for(const [index,block] of state.blocks){
+      if(!['text','reasoning'].includes(block.type)||!block.text)continue;
+      liveMessages.push({id:`live:${state.generation}:${state.attemptId}:${index}`,turnId:String(state.turn),
+        role:block.type==='text'?'assistant':'reasoning',text:block.text,streaming:true});
+    }
+    if(state.committedSeq!==undefined)return {liveMessages};
+    const start=records.find(record=>record.event?.type==='turn/start'&&record.event.data?.turn===state.turn)?.event.time;
+    const startedAt=state.startedAt??start;
+    return {liveMessages,liveActivity:{turnId:String(state.turn),turn:state.turn,kind:state.kind,
+      ...(Number.isSafeInteger(startedAt)&&startedAt>0?{startedAt}:{})}};
+  }
+  disposeAgent(agent){const sid=agent?.session?.id,state=this.sessions.get(sid);if(state&&(state.agent===agent||!state.agent&&state.session===agent?.session))this.sessions.delete(sid);}
+  dispose(){this.closed=true;this.sessions.clear();}
+}
+
 export async function readHistoryPage(controller,row,body={},signal=new AbortController().signal){
   const limit=body.historyLimit??40;
   if(!Number.isInteger(limit)||limit<1||limit>100)throw Error('历史页大小无效');
@@ -18,13 +152,22 @@ export async function readHistoryPage(controller,row,body={},signal=new AbortCon
   const page=await controller.page({address:{kind:'session',sessionId:row.sessionId},throughSeq:seq,...cursor?{beforeSeq:cursor.before}:{},maxMessages:limit},signal);
   const rows=page.records||[],boundary=rows[0]?.event?.seq;
   if(!Array.isArray(rows)||typeof page.hasMore!=='boolean'||page.hasMore&&(!Number.isSafeInteger(boundary)||cursor&&boundary>=cursor.before))throw Error('历史分页响应无效');
-  return {rows,history:{before:page.hasMore?Buffer.from(JSON.stringify({sid:row.sessionId,seq,before:boundary})).toString('base64url'):null,hasMore:page.hasMore}};
+  return {rows,asOfSeq:seq,history:{before:page.hasMore?Buffer.from(JSON.stringify({sid:row.sessionId,seq,before:boundary})).toString('base64url'):null,hasMore:page.hasMore}};
 }
 export async function apply(ctx,config){
   const {token,endpoint}=JSON.parse(await readFile(config.configPath,'utf8'));
   // The gateway accepts at most 100 MiB of decoded images plus small JSON fields.
   const maxRequestBytes=Math.ceil(100*1024*1024*4/3)+1024*1024;
   const questions=new Map();
+  const livePreview=new LiveAssistantPreview();
+  ctx.on('session/event',(session,event)=>{
+    const active=ctx.agents.get?.(session?.id);
+    if(!active||active.session===session)livePreview.sessionEvent(session,event);
+  },{global:true});
+  ctx.on('agent/assistant-stream',payload=>{
+    if(ctx.agents.get?.(payload?.agent?.session?.id)===payload?.agent)livePreview.accept(payload);
+  },{global:true});
+  ctx.on('agent/disposed',({agent})=>livePreview.disposeAgent(agent),{global:true});
   let quitting=false,activeMutations=0;
   const signal=()=>new AbortController().signal;
   const list=async()=> (await ctx.sessionController.list({},signal())).items;
@@ -107,12 +250,12 @@ export async function apply(ctx,config){
   function lifecycle(){
       // The runtime registry includes child agents omitted from the chat list.
       // This snapshot is requested only before a native quit/restart.
-      if(typeof ctx.agents.list!=='function')return {connected:true,bridgeRevision:7,complete:false,sessions:[]};
+      if(typeof ctx.agents.list!=='function')return {connected:true,bridgeRevision:8,complete:false,sessions:[]};
       const agents=ctx.agents.list();
-      if(!Array.isArray(agents))return {connected:true,bridgeRevision:7,complete:false,sessions:[]};
+      if(!Array.isArray(agents))return {connected:true,bridgeRevision:8,complete:false,sessions:[]};
       const sessions=agents.map(agent=>({id:agent.id,status:agent.status==='running'?'active':agent.status==='idle'?'idle':'unknown',runtimeKnown:['idle','running'].includes(agent.status),requests:[...questions.values()].filter(q=>q.sid===agent.id).map(q=>q.public)}));
       for(const question of questions.values())if(!sessions.some(s=>s.id===question.sid))sessions.push({id:question.sid,status:'waiting',runtimeKnown:true,requests:[question.public]});
-      return {connected:true,bridgeRevision:7,complete:sessions.every(s=>typeof s.id==='string'&&s.id.length>0),sessions};
+      return {connected:true,bridgeRevision:8,complete:sessions.every(s=>typeof s.id==='string'&&s.id.length>0),sessions};
   }
   const idle=runtime=>runtime.complete&&runtime.sessions.every(s=>s.runtimeKnown&&s.status==='idle'&&!s.requests.length);
   const quitFailed=error=>{quitting=false;ctx.logger?.error?.('Harness native quit failed: '+String(error.message||error));};
@@ -135,7 +278,7 @@ export async function apply(ctx,config){
       quitting=true;
       return {status:'accepted',pid:process.pid,generation};
     }
-    if(action==='status')return {connected:true,bridgeRevision:7,projectDirectories:true,nativeQuit:typeof ctx.get?.('appExit')==='function',configured:(await account()).status==='configured'};
+    if(action==='status')return {connected:true,bridgeRevision:8,projectDirectories:true,nativeQuit:typeof ctx.get?.('appExit')==='function',configured:(await account()).status==='configured'};
     if(action==='account')return account(sid);
     if(action==='list')return {connected:true,sessions:(await list()).filter(r=>r.origin!=='subagent').map(r=>({...normalize(r),archived:(ctx.workspaceRegistry.archivedSessionIds||[]).includes(r.sessionId)})).sort((a,b)=>Number(a.archived)-Number(b.archived))};
     if(action==='projects'){const seen=new Map();for(const row of await list())if(row.cwd)seen.set(row.cwd,{key:row.cwd,cwd:row.cwd,name:row.cwd.replaceAll('\\','/').split('/').pop()});for(const w of ctx.workspaceRegistry.list())seen.set(w.path,{key:w.path,cwd:w.path,name:w.title||w.name||w.path,workspaceId:w.id});return {projects:[...seen.values()]};}
@@ -193,7 +336,16 @@ export async function apply(ctx,config){
       return {status:'accepted'};
     }
     if(action==='open')return {ok:true};
-    if(action==='detail'){const page=await readHistoryPage(ctx.sessionController,row,body,signal());return {session:normalize(row),capabilities:capabilities(),records:page.rows.filter(r=>['user/message','assistant/message','tool/call','tool/result','todo/write','turn/start','turn/end'].includes(r.event.type)),history:page.history,steps:values(row).todos||[],connected:true};}
+    if(action==='detail'){
+      const page=await readHistoryPage(ctx.sessionController,row,body,signal());
+      const currentAgent=ctx.agents.get?.(sid);
+      // The list was read before page I/O. Resample the existing native Agent
+      // without activating it so a new turn cannot be erased by that idle row.
+      const current=body.historyBefore==null&&currentAgent?.session?.id===sid&&['running','idle'].includes(currentAgent.status)
+        ? {...row,running:currentAgent.status==='running'} : row;
+      const live=body.historyBefore!=null?{}:livePreview.snapshot(sid,{running:current.running,asOfSeq:page.asOfSeq,agent:currentAgent,records:page.rows});
+      return {session:normalize(current),capabilities:capabilities(),records:page.rows.filter(r=>['user/message','assistant/message','tool/call','tool/result','todo/write','turn/start','turn/end'].includes(r.event.type)),history:page.history,steps:values(row).todos||[],connected:true,...live};
+    }
     if(action==='catalog')return catalog(sid,body.section||'all');
     if(action==='access'){const presets=ctx.permissionPresets.catalog(),options=presets.options;if(body.mode){if(!options.some(o=>o.value===body.mode))throw Error('权限选项无效');await ctx.sessionController.create({sessionId:sid,cwd:row.cwd});const agent=ctx.agents.get(sid);if(!agent)throw Error('当前会话没有活动智能体');ctx.permissionPresets.set(agent.session,body.mode);}return {status:'accepted',mode:body.mode||values(row).permissions?.currentValue||presets.defaultPreset,modes:options.map(o=>o.value),options};}
     if(action==='settings'){const c=await catalog(sid,'models'),selected=body.model||c.currentModel,m=c.models.find(m=>m.id===selected);if(!m)throw Error('请选择可用模型');const effort=body.effort??(selected===c.currentModel?c.currentEffort:m.defaultEffort);if(effort&&!m.efforts.includes(effort))throw Error('该模型不支持所选思考强度');const slash=selected.indexOf('/'),result=await ctx.sessionController.selectModel({sessionId:sid,provider:selected.slice(0,slash),model:selected.slice(slash+1),reasoningEffort:effort||undefined}),actual=result.selected;return {status:'accepted',model:actual.provider+'/'+actual.model,effort:actual.reasoningEffort||''};}
@@ -227,6 +379,7 @@ export async function apply(ctx,config){
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   const port=server.address().port,generation=randomUUID();await writeFile(endpoint+'.tmp',JSON.stringify({port,pid:process.pid,generation}),{mode:0o600});await rename(endpoint+'.tmp',endpoint);
   ctx.effect(()=>async()=>{
+    livePreview.dispose();
     server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
     // Another host may already have published its endpoint in this shared file.
     // Retiring an older fiber must only remove the endpoint it created.

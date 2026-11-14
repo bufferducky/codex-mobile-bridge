@@ -1,3 +1,32 @@
+<a id="v2118"></a>
+
+## v2.1.18 · DeepSeek 手机聊天体验对齐
+
+桌面与手机版本 **2.1.18**，手机构建号 **51**。提供 Mac Apple Silicon / Intel 与 Android 同签名包。
+
+### 改进
+
+- **紧凑布局**：DeepSeek 共用 Codex 的单行标题栏、可滑动工具栏和紧凑输入行。仅有聊天标签时收起冗余标签栏，保留文件、Git、终端入口、草稿和原控件事件。
+- **系统上下文默认收起**：依据 Harness 原生消息来源，将自动工作目录、权限说明等放入“会话上下文”。用户输入、正常英文和用户粘贴的同名标签保留原文，原始历史与模型输入不修改。
+- **按轮次折叠过程**：思考、工具调用和结果汇总到默认折叠的执行详情；调用与结果配对，不重复计数，加载旧页后保留完整参数和输出。公开回复、任务失败和审批保持可见。
+- **真实执行进度**：使用 Harness 原生流式事件展示生成中的回复和思考；底部显示最近可确认的动作和原生耗时，摘要最多五行。缺帧、取消、换轮次和正式历史提交后清理临时预览，避免重复或串会话。
+- **详情断线恢复**：保留已读正文与草稿，短暂读取失败自动退避重试，持续失败提供中文提示。修复桌面临时不可达被错误返回为不可重试 HTTP 400 的问题。发送、停止、审批等写操作仍不自动重放。
+
+### 更新与验收
+
+1. 更新电脑 Bridge 到 **2.1.18**。
+2. 结束 DeepSeek Harness 中的原生任务和审批，在“客户端与接入”按提示选择 **重启并接入**，加载插件 **revision 8**。已有凭据、会话目录和操作回执保留；不能只看 App 版本号判断插件已更新。
+3. 手机使用 **更多 → 刷新页面**，或退出当前电脑连接后重新进入。已有 Android 可继续使用；新版 APK 可按需覆盖安装，无需清除数据。
+4. 验收标题与输入区密度、系统上下文折叠、连续工具分组、实时动作与回复、切后台和断网恢复。未运行真实模型任务，手机真机效果由用户验收。
+
+源码阶段执行 Python 完整回归 2741 项，无失败、82 项按平台或原生环境跳过；Node 1289 项通过、1 项按环境跳过。DSH 隔离浏览器在四种尺寸及深浅主题下通过 208 项断言，实际预览包资源重跑通过；Codex 代码阅读、进度与动作展示另在 20 个宿主/尺寸/语言组合通过。打包、签名、安装与真实插件加载分别核验，不把浏览器模拟当作 Android 真机结论。[实现与验证边界](docs/architecture/deepseek-mobile-experience.md)
+
+### English
+
+Bring the compact Codex phone layout to DeepSeek Harness. Collapse native system context and group thinking/tools by native turn, pair calls with their results, show native streaming replies and current activity, and recover transient detail-read failures without losing history or drafts. Unknown sends, approvals and stop operations are never automatically replayed. Update the PC gateway, finish Harness tasks, select **Restart and connect** to load connector revision 8, then refresh the phone page. Existing Android installations remain usable; physical-device and real-model acceptance remains with the user.
+
+---
+
 <a id="v2117"></a>
 
 ## v2.1.17 · 手机聊天列表的断网恢复与提示优化

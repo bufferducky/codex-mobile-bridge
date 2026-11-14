@@ -12,6 +12,8 @@
 
 ## 进度说明与工具摘要
 
+`./node_modules/.bin/electron scripts/smoke-deepseek-ui.cjs` 使用独立 Electron 数据目录加载生产 DSH 页面、真实 DOM 及合成只读 API，实际执行 `deepseek-experience.browser.js`。覆盖 320/390/844/1440 px 和深浅主题的紧凑输入、工作台、草稿、系统上下文、按轮次过程分组、异常摘要及当前动作；结果和截图保存在 `.tmp/deepseek-experience/`。不访问真实客户端或模型，不代替 Android WebView 真机验收。
+
 Android 合成页面中加载 `android-density.browser.js` 后调用 `runAndroidDensityChecks()`，核验模型标识隐藏、小图标操作栏、复制与引用的原始正文、复制成功反馈、编辑和分支能力限制、流式更新状态、图标点击区域和执行详情间距。不访问真实剪贴板、不修改真实聊天。
 
 在已加载生产 `timeline.js`、Markdown 和聊天样式的隔离页面中加载 `progress-timeline.browser.js`，调用并等待 `runProgressTimelineChecks()`。分别以 320、390、844、1440 px 视口运行中英文检查，核验进度说明直接显示、连续工具和单次异常合并折叠、任务级错误与审批元数据保留，以及流式更新、显示开关和历史前插时的展开状态。详情请求只返回闭包中的合成结果，不访问真实聊天。`{keepOpen:true}` 保留示例供视觉检查，结束后调用 `window.__progressTimelinePreview.cleanup()`。

@@ -383,6 +383,18 @@ class HttpAdapters(unittest.TestCase):
     tearDown = test_bridge.HttpTests.tearDown
     request = test_bridge.HttpTests.request
     login = test_bridge.HttpTests.login
+
+    def test_disconnected_desktop_read_is_retryable_without_weakening_auth(self):
+        manager = self.server.desktop_sessions = Mock()
+        manager.call.side_effect = BridgeUnavailable('桌面连接暂时中断')
+        route = '/api/desktop-sessions/deepseek/detail?sessionId=native-id'
+        self.assertEqual(self.request('GET', route)[0], 401)
+        response = self.request('GET', route, headers=self.login())
+        self.assertEqual(response[0], 503)
+        self.assertEqual(response[2]['code'], 'desktop_unavailable')
+        manager.call.side_effect = BridgeUnavailable('原生操作明确拒绝', retryable=False)
+        self.assertEqual(self.request('GET', route, headers=self.login())[0], 409)
+
     def test_client_get_uses_nonblocking_status_path(self):
         manager = self.server.desktop_sessions = Mock()
         manager.clients_status.return_value = {'clients': [], 'pending': True}

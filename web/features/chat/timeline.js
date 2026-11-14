@@ -25,8 +25,9 @@ function timelineWorkingActionText(action,status){
   return timelineText(text).replace(/\{(target|query|command)\}/g,(_,key)=>({target,query,command})[key]);
 }
 
-function timelineWorkingStatusText(activity,waiting){
+function timelineWorkingStatusText(activity,waiting,provider){
   if(waiting)return timelineText('等待你的确认或回复…');
+  if(provider==='deepseek'&&(!activity.kind||activity.kind==='working'))return timelineText('DeepSeek 正在处理…');
   return timelineWorkingActionText(timelineWorkingSummary(activity),activity.status);
 }
 
@@ -52,7 +53,7 @@ class ChatActivityStatus {
     if(this.node.hidden){this.elapsed.hidden=true;this.elapsed.textContent='';return;}
     const activity=view.currentActivity||{};
     const kind=view.requests?.length?'waiting':timelineWorkingSummary(activity).kind||'working';
-    this.label.textContent=timelineWorkingStatusText(activity,kind==='waiting');
+    this.label.textContent=timelineWorkingStatusText(activity,kind==='waiting',view.provider);
     this.label.title=kind==='waiting'?this.label.textContent:timelineWorkingDetailsText(activity);
     this.node.dataset.activityKind=kind;
     this.startedAt=activity.startedAt;this.renderTime();
@@ -89,7 +90,7 @@ function timelineActivityLabel(row){
 function timelineProcessRow(row){
   if(!row.turnId||row.role==='error'||row.role==='fileChanges'||row.fileSummary)return false;
   if(row.attachments?.some(item=>['toolImage','localImage','image'].includes(item.type)))return false;
-  return row.role==='activity';
+  return row.role==='activity'||row.role==='reasoning';
 }
 function timelineProcessGroups(rows){
   const result=[],runs=new Map();let group=null;
@@ -103,6 +104,49 @@ function timelineProcessGroups(rows){
   }
   return result;
 }
+// Shared by Codex and native desktop-provider views; preserves disclosure identity.
+function timelineProcessLayout(ordered,nodes,processGroups,visible=()=>true){
+    const plan=timelineProcessGroups(ordered.filter(visible)),roots=[],used=new Set();
+    const place=(parent,nodes)=>{
+      let position=parent.firstChild;
+      for(const node of nodes){if(node===position)position=position.nextSibling;else parent.insertBefore(node,position);}
+      const keep=new Set(nodes);for(const node of [...parent.children])if(!keep.has(node))node.remove();
+    };
+    for(const item of plan){
+      if(item.row){roots.push(nodes.get(item.row.key).node);continue;}
+      const keys=new Set(item.rows.map(row=>row.key));
+      // A history page can prepend another run in the same turn. Match by row
+      // identity so an expanded group never transfers to that unrelated run.
+      const existing=[...processGroups].find(([key,group])=>!used.has(key)&&group.node.dataset.turnId===String(item.turnId)&&[...keys].some(rowKey=>group.keys.has(rowKey)));
+      let [groupKey,group]=existing||[JSON.stringify([item.turnId,item.rows[0].key]),null];
+      if(!group){
+        const node=document.createElement('details'),heading=document.createElement('summary'),body=document.createElement('div');
+        node.className='process-group';body.className='process-group-body';node.append(heading,body);
+        group={node,heading,body,keys};processGroups.set(groupKey,group);
+      }
+      group.keys=keys;
+      const count=item.rows.filter(row=>row.role==='activity'&&row.kind!=='reasoning'&&!row.resultOnly).length;
+      const issues=item.rows.filter(timelineFailure).length;
+      group.node.dataset.key=item.rows[0].key;group.node.dataset.turnId=item.turnId;
+      const label=timelineText(count?'执行详情 · {count} 项工具活动':item.rows.some(row=>row.role==='activity'&&row.kind!=='reasoning')?'执行详情 · 部分历史':'思考摘要').replace('{count}',count);
+      const issueLabel=issues?' · '+timelineText('{count} 项异常').replace('{count}',issues):'';
+      if(group.heading.textContent!==label+issueLabel){
+        group.heading.textContent=label;
+        if(issues){const badge=document.createElement('span');badge.className='process-group-issues';badge.textContent=issueLabel;group.heading.append(badge);}
+      }
+      group.heading.title=timelineText('按当前已加载的记录汇总');
+      place(group.body,item.rows.map(row=>nodes.get(row.key).node));roots.push(group.node);used.add(groupKey);
+    }
+
+    const turns=new Set(ordered.map(row=>String(row.turnId)));
+    for(const [key,group] of processGroups)if(!used.has(key)){
+      group.node.remove();
+      // Hiding execution details must not forget a disclosure the user opened.
+      if(!turns.has(group.node.dataset.turnId))processGroups.delete(key);
+    }
+    return roots;
+}
+
 function timelineFilePath(path,cwd){
   if(typeof path!=='string'||!path||typeof cwd!=='string'||!cwd||/[\0\r\n]/.test(path))throw Error(timelineText('文件路径无法定位'));
   const windows=/^(?:[A-Za-z]:[\\/]|\\\\|\/\/)/.test(cwd);
@@ -287,45 +331,12 @@ class ChatTimeline {
     }
   }
   layoutRows(ordered=[...this.rows.values()].map(x=>x.row).sort((a,b)=>a.order-b.order)){
-    const plan=timelineProcessGroups(ordered.filter(row=>this.rowVisible(row))),roots=[],used=new Set();
-    const place=(parent,nodes)=>{
-      let position=parent.firstChild;
-      for(const node of nodes){if(node===position)position=position.nextSibling;else parent.insertBefore(node,position);}
-      const keep=new Set(nodes);for(const node of [...parent.children])if(!keep.has(node))node.remove();
-    };
-    for(const item of plan){
-      if(item.row){roots.push(this.nodes.get(item.row.key).node);continue;}
-      const keys=new Set(item.rows.map(row=>row.key));
-      // A history page can prepend another run in the same turn. Match by row
-      // identity so an expanded group never transfers to that unrelated run.
-      const existing=[...this.processGroups].find(([key,group])=>!used.has(key)&&group.node.dataset.turnId===String(item.turnId)&&[...keys].some(rowKey=>group.keys.has(rowKey)));
-      let [groupKey,group]=existing||[JSON.stringify([item.turnId,item.rows[0].key]),null];
-      if(!group){
-        const node=document.createElement('details'),heading=document.createElement('summary'),body=document.createElement('div');
-        node.className='process-group';body.className='process-group-body';node.append(heading,body);
-        group={node,heading,body,keys};this.processGroups.set(groupKey,group);
-      }
-      group.keys=keys;
-      const count=item.rows.filter(row=>row.role==='activity'&&row.kind!=='reasoning').length;
-      const issues=item.rows.filter(timelineFailure).length;
-      group.node.dataset.key=item.rows[0].key;group.node.dataset.turnId=item.turnId;
-      const label=timelineText(count?'执行详情 · {count} 项工具活动':'思考摘要').replace('{count}',count);
-      const issueLabel=issues?' · '+timelineText('{count} 项异常').replace('{count}',issues):'';
-      if(group.heading.textContent!==label+issueLabel){
-        group.heading.textContent=label;
-        if(issues){const badge=document.createElement('span');badge.className='process-group-issues';badge.textContent=issueLabel;group.heading.append(badge);}
-      }
-      group.heading.title=timelineText('按当前已加载的记录汇总');
-      place(group.body,item.rows.map(row=>this.nodes.get(row.key).node));roots.push(group.node);used.add(groupKey);
-    }
-    place(this.container,roots);
-    const turns=new Set(ordered.map(row=>String(row.turnId)));
-    for(const [key,group] of this.processGroups)if(!used.has(key)){
-      group.node.remove();
-      // Hiding execution details must not forget a disclosure the user opened.
-      if(!turns.has(group.node.dataset.turnId))this.processGroups.delete(key);
-    }
+    const roots=timelineProcessLayout(ordered,this.nodes,this.processGroups,row=>this.rowVisible(row));
+    let position=this.container.firstChild;
+    for(const node of roots){if(node===position)position=position.nextSibling;else this.container.insertBefore(node,position);}
+    const keep=new Set(roots);for(const node of [...this.container.children])if(!keep.has(node))node.remove();
   }
+
   renderRow(row,open){
     const reconnect=timelineReconnectText(row);
     if(reconnect){

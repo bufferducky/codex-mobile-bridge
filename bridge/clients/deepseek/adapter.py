@@ -10,14 +10,15 @@ from pathlib import Path
 from bridge.features.accounts.models import NoRedirect
 from bridge.app.lifecycle import private_json
 from bridge.clients.errors import BridgeUnavailable
+from bridge.clients.deepseek.model import messages, current_activity
 from bridge.features.sessions.create import ArchiveNotSent
 from bridge.clients.deepseek.setup import MARKER, insertion, verified_directory, legacy_account_configured
 
 PLUGIN_ID = re.compile(r'''["']?id["']?\s*:\s*["']?codex-mobile-desktop(?:["'\s,}]|$)''')
-BRIDGE_REVISION = 7
+BRIDGE_REVISION = 8
 # Revisions 3–6 share the complete native-agent lifecycle schema; presentation
 # and fork capability additions do not invalidate an older idle snapshot.
-LIFECYCLE_REVISIONS = (3, 4, 5, 6, BRIDGE_REVISION)
+LIFECYCLE_REVISIONS = (3, 4, 5, 6, 7, BRIDGE_REVISION)
 UPDATE_REASON = 'Harness 接入需要更新，请结束任务后点击“重启并接入”'
 
 
@@ -183,26 +184,46 @@ class DeepSeek:
             endpoint = json.loads((self.directory/'endpoint.json').read_text())
             port = endpoint['port']
             if not isinstance(port, int) or not 1 <= port <= 65535:
-                raise ValueError('Harness 端口无效')
+                raise BridgeUnavailable('Harness 接入配置无效，请检查桌面接入状态', retryable=False)
             request = urllib.request.Request(f'http://127.0.0.1:{port}/mobile', data=json.dumps({'action': action, 'sid': sid, 'body': body or {}}).encode(), headers={'Authorization': 'Bearer '+config['token'], 'Content-Type': 'application/json'})
             with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=30) as response:
                 raw = response.read(32*1024*1024+1)
             if len(raw) > 32*1024*1024:
                 raise BridgeUnavailable('会话内容过大，请在桌面查看')
             value = json.loads(raw)
+            if not isinstance(value, dict):
+                raise BridgeUnavailable('Harness 返回的会话数据无效，请重试', code='desktop_protocol_error')
         except urllib.error.HTTPError as exc:
             try:
-                message = json.loads(exc.read(4096)).get('error', 'Harness 拒绝了操作')
+                error = json.loads(exc.read(4096))
+                message = error.get('error', 'Harness 拒绝了操作') if isinstance(error, dict) else 'Harness 拒绝了操作'
             except ValueError:
                 message = 'Harness 拒绝了操作'
-            raise BridgeUnavailable(message) from exc
+            raise BridgeUnavailable(message, retryable=exc.code >= 500 or exc.code in (408, 429)) from exc
+        except BridgeUnavailable:
+            raise
+        except json.JSONDecodeError as exc:
+            raise BridgeUnavailable('Harness 会话数据暂时无法解析，请重试', code='desktop_protocol_error') from exc
+        except TimeoutError as exc:
+            raise BridgeUnavailable('Harness 响应超时，聊天内容尚未更新') from exc
         except (OSError, KeyError) as exc:
-            raise BridgeUnavailable('DeepSeek 桌面未连接，请安装接入插件并重新打开 Harness') from exc
+            raise BridgeUnavailable('DeepSeek 桌面连接已中断，请检查接入状态后重试') from exc
         if action == 'archive' and value.get('archiveNotSent') is True:
             raise ArchiveNotSent(value.get('message') or '原生客户端拒绝归档，操作未发送')
         if action == 'detail':
             records = value.pop('records', [])
             value['messages'] = messages(records)
+            session = value.get('session')
+            if isinstance(session, dict) and not (body or {}).get('historyBefore'):
+                session['currentActivity'] = current_activity(records, session.get('status') == 'active', value['messages'])
+                live = value.pop('liveActivity', None)
+                if isinstance(live, dict) and session.get('status') == 'active':
+                    session['currentActivity'] = {**(session['currentActivity'] or {}), **live}
+            for row in value.pop('liveMessages', []):
+                if (isinstance(row, dict) and row.get('role') in ('assistant', 'reasoning')
+                        and isinstance(row.get('id'), str) and isinstance(row.get('text'), str)
+                        and session and session.get('status') == 'active' and not (body or {}).get('historyBefore')):
+                    value['messages'].append({key: row[key] for key in ('id', 'turnId', 'role', 'text', 'streaming') if key in row})
             value['turns'] = turns(records)
             if not isinstance(value.get('capabilities'), dict):
                 # Older connectors still provide readable history. Do not imply
@@ -262,33 +283,3 @@ def turns(records):
             value.update(status='completed' if ending == 'completed' else 'interrupted' if ending in ('aborted', 'interrupted') else 'failed', endReason=ending)
         result[identifier] = value
     return sorted(result.values(), key=lambda value: value['sequence'])
-
-
-def messages(records):
-    result = []
-    final_assistant = None
-    for item in records:
-        event = item.get('event', {})
-        data = event.get('data') or {}
-        kind = event.get('type')
-        if kind == 'turn/start':
-            final_assistant = None
-        if kind == 'turn/end':
-            if (final_assistant is not None and isinstance(data.get('reason'), dict)
-                    and data['reason'].get('kind') == 'completed'
-                    and type(event.get('seq')) is int and event['seq'] >= 0):
-                final_assistant['forkMessageId'] = str(event['seq'])
-            final_assistant = None
-        if kind in ('user/message', 'assistant/message'):
-            content = data.get('message', data).get('content', [])
-            if isinstance(content, str):
-                content = [{'type': 'text', 'text': content}]
-            for i, block in enumerate(content):
-                text = block.get('text') or block.get('thinking') or ('[图片]' if block.get('type') == 'image' else '')
-                if text:
-                    result.append({'id': str(event.get('seq'))+':'+str(i), 'role': 'reasoning' if block.get('type') in ('thinking', 'reasoning') else kind.split('/')[0], 'text': text})
-                    if kind == 'assistant/message' and result[-1]['role'] == 'assistant':
-                        final_assistant = result[-1]
-        elif kind in ('tool/call', 'tool/result', 'todo/write'):
-            result.append({'id': str(event.get('seq')), 'role': 'activity', 'title': data.get('name') or data.get('toolName') or kind, 'text': json.dumps(data, ensure_ascii=False, indent=2)})
-    return result

@@ -2,6 +2,14 @@
 // UI messages only. Never translate chat content, commands, model IDs or user input.
 const BridgeI18n=(()=>{
 const en={
+"DeepSeek 本轮执行失败，请在桌面查看错误详情。":"This DeepSeek turn failed. Check the desktop for error details.",
+"DeepSeek 本轮执行已被阻止，请检查权限或审批状态。":"This DeepSeek turn was blocked. Check permissions or approvals.",
+"DeepSeek 本轮已达到输出上限，可发送消息继续。":"This DeepSeek turn reached the output limit. Send a message to continue.",
+"会话上下文":"Session context",
+"执行详情 · 部分历史":"Execution details · partial history",
+"DeepSeek 正在处理…":"DeepSeek is working…",
+"连接暂时不稳定，聊天内容尚未更新，点击重试":"Connection is unstable. Chat content has not updated. Tap to retry",
+"聊天内容读取失败，请检查接入状态后重试":"Unable to read this chat. Check the client connection and retry",
 "智能手机提醒":"Smart phone alerts",
 "Mac 活跃时手机静默；锁屏或闲置 3 分钟后恢复。审批与提问等待 30 秒仍未处理时提醒；Android 正在查看的聊天静默，完成通知不补发。适用于 ntfy、Bark 和 PushPlus。":"Silence phone alerts while your Mac is active; resume when locked or idle for 3 minutes. Remind after 30 seconds for unanswered approvals and questions. Silence the chat being viewed on Android. Skipped completions are never replayed. Applies to ntfy, Bark and PushPlus.",
 "纯文本":"Plain text",

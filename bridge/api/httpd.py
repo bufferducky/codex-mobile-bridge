@@ -18,6 +18,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from bridge.features.workspace.uploads import MAX_FILE
+from bridge.clients.errors import BridgeUnavailable
 from bridge.features.workspace.workspace import MAX_TRANSFER, Workspace
 from bridge.features.workspace.preferences import transfer_settings
 from bridge.features.workspace.files import workspace_relative_path
@@ -1261,6 +1262,9 @@ class Handler(BaseHTTPRequestHandler):
         except SubmissionRejected as exc:
             self.close_connection = True
             self.output(400, {"error": str(exc), "code": "send_not_submitted"})
+        except BridgeUnavailable as exc:
+            self.close_connection = True
+            self.output(503 if exc.retryable else 409, {"error": str(exc), "code": exc.code})
         except ValueError as exc:
             self.close_connection = True
             self.output(400, {"error": str(exc)})

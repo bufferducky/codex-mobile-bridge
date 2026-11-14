@@ -208,7 +208,7 @@ class DeepSeekMigrationTests(unittest.TestCase):
         source.write_bytes(content)
         original_sha = hashlib.sha256
         for predecessor in (*setup.PREVIOUS_WORKSPACE_SOURCES, *setup.PREVIOUS_ARCHIVE_SOURCES,
-                            *setup.PREVIOUS_DISCONNECT_SOURCES):
+                            *setup.PREVIOUS_DISCONNECT_SOURCES, *setup.PREVIOUS_PRESENTATION_SOURCES):
             source.write_bytes(content)
             before = {path: (path.read_bytes(), path.stat().st_mtime_ns)
                       for path in (*self.old.directory.iterdir(), self.profile)}
@@ -231,9 +231,9 @@ class DeepSeekMigrationTests(unittest.TestCase):
         lf = current.read_bytes().replace(b'\r\n', b'\n')
         self.assertIn(b'\n', lf)
         self.assertEqual(hashlib.sha256(lf).hexdigest(),
-                         '74c6a26a7a8eca9a6dfe5e6256f595a174c58b3645d3bd15497c9877d1422938')
+                         'dc810b487015d25dcb85a1ada922359222df7bd9cadae0fecb3ecfd9dec12c10')
         self.assertEqual(hashlib.sha256(lf.replace(b'\n', b'\r\n')).hexdigest(),
-                         '740533827d3817803605c490bd95f3ffbff1bc841cf14f99820ebcf0db14ab4b')
+                         'f0b53e3c95ebc678f1647382b29243791738b7fa8e9e21aa0619ae12ba51b2a7')
         for content in (lf, lf.replace(b'\n', b'\r\n')):
             with self.subTest(line_ending='CRLF' if b'\r\n' in content else 'LF'):
                 source.write_bytes(content)

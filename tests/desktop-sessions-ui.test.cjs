@@ -53,6 +53,17 @@ test('late older history is discarded after switching sessions',async()=>{
  assert.deepEqual(Array.from(ui.view.historyMessages,m=>m.id),['b']);
 });
 
+test('DeepSeek pairs a result-only tail with its call on an older page without losing either output',async()=>{
+ const ui=fixture();await ui.view.choose('deepseek');await ui.view.open('a');
+ const result={id:'tool:4:call',turnId:'4',role:'activity',toolCallId:'call',title:'工具结果',resultOnly:true,status:'completed',text:'native output'};
+ ui.view.applyDetail({session:{id:'a',title:'DSH',status:'active'},messages:[result],history:{before:'earlier',hasMore:true}});
+ const call={id:result.id,turnId:'4',role:'activity',toolCallId:'call',title:'bash',action:{kind:'command',command:'node --test'},status:'inProgress',callText:'native command',text:'native command'};
+ ui.setHandler(async()=>({messages:[call],history:{before:null,hasMore:false}}));await ui.view.loadOlderHistory();
+ assert.equal(ui.view.historyMessages.length,1);assert.equal(ui.view.historyMessages[0].resultOnly,false);assert.equal(ui.view.historyMessages[0].status,'completed');assert.match(ui.view.historyMessages[0].text,/native command[\s\S]*native output/);
+ ui.view.applyDetail({session:{id:'a',title:'DSH',status:'active'},messages:[{...result,text:'new output'}],history:{before:'earlier',hasMore:true}});
+ assert.equal(ui.view.historyMessages[0].resultOnly,false);assert.match(ui.view.historyMessages[0].text,/native command[\s\S]*new output/);assert.doesNotMatch(ui.view.historyMessages[0].text,/native output/);
+});
+
 test('Claude list reentry paints a bounded identity-scoped snapshot before the live read',async()=>{
  const storage=new Map(),identity='a'.repeat(64),first=fixture({storage});first.view.bindListCache(identity,'gateway.test');
  first.setHandler(async()=>({sessions:[{id:'saved',title:'Saved chat',backend:'code',cwd:'/work',updatedAt:9,capabilities:{send:true}}]}));
@@ -673,6 +684,20 @@ test('cached history survives refresh failure and late errors cannot cross provi
 
 test('reopening cached history keeps its scroll and draft when the background connection fails',async()=>{
  const ui=fixture();ui.setHandler(async url=>url.includes('/detail')?{session:{id:'a',title:'Saved title',status:'idle'},messages:[{id:'saved',role:'assistant',text:'saved history'}]}:{sessions:[{id:'a',title:'Saved title',backend:'code'}]});await ui.view.choose('claude');await ui.view.open('a');ui.view.input.value='saved draft';ui.view.messages.scrollTop=42;ui.view.backToList();ui.setHandler(async()=>{throw Error('offline');});const reopening=ui.view.open('a');assert.match(ui.view.messages.textContent,/saved history/);assert.equal(ui.view.messages.scrollTop,42);assert.equal(ui.view.input.value,'saved draft');await reopening;assert.match(ui.view.messages.textContent,/saved history/);assert.equal(ui.view.send.disabled,true);assert.match(ui.view.error.textContent,/offline/);
+});
+
+test('DeepSeek detail failures preserve readable history and escalate once before recovery',async()=>{
+ const ui=fixture();await ui.view.choose('deepseek');ui.setHandler(async()=>({session:{id:'a',title:'DSH',status:'active'},messages:[{id:'saved',role:'assistant',text:'已保存正文'}]}));await ui.view.open('a');
+ ui.view.input.value='未发送草稿';ui.setHandler(async()=>{throw new TypeError('Failed to fetch');});
+ for(let attempt=1;attempt<=3;attempt++){await assert.rejects(ui.view.detail(ui.view.generation));assert.equal(ui.view.detailHint.hidden,attempt<3);assert.match(ui.view.messages.textContent,/已保存正文/);assert.equal(ui.view.input.value,'未发送草稿');assert.equal(ui.view.send.disabled,true);assert.equal(ui.view.error.textContent,'');}
+ assert.match(ui.view.detailHint.textContent,/连接暂时不稳定/);assert.equal(ui.view.detailSync.diagnostics.length,3);
+ ui.setHandler(async()=>({session:{id:'a',title:'DSH',status:'idle'},messages:[{id:'saved',role:'assistant',text:'恢复后的正文'}]}));await ui.view.detail(ui.view.generation);
+ assert.equal(ui.view.detailHint.hidden,true);assert.equal(ui.view.send.disabled,false);assert.equal(ui.view.detailSync.failures,0);
+});
+
+test('a successful detail read cannot erase an unrelated write error or reuse a previous chat failure',async()=>{
+ const ui=await opened();ui.view.error.textContent='发送结果待核对';ui.setHandler(async()=>({session:{id:'a',title:'Current',status:'idle'},messages:[]}));await ui.view.detail(ui.view.generation);assert.equal(ui.view.error.textContent,'发送结果待核对');
+ ui.setHandler(async()=>{throw Error('offline');});await assert.rejects(ui.view.detail(ui.view.generation));ui.setHandler(async()=>({session:{id:'b',title:'Next',status:'idle'},messages:[]}));await ui.view.open('b');assert.equal(ui.view.detailSync.failures,0);assert.equal(ui.view.detailHint.hidden,true);
 });
 test('logout clears provider history and ignores detail responses arriving after clear',async()=>{
  const ui=fixture();ui.setHandler(async url=>url.includes('/detail')?{session:{id:'a',title:'Private title',status:'idle'},messages:[{id:'saved',role:'assistant',text:'private history'}]}:{sessions:[{id:'a',title:'Private title',backend:'code'}]});await ui.view.choose('claude');await ui.view.open('a');let complete;ui.setHandler(()=>new Promise(resolve=>complete=resolve));const late=ui.view.detail(ui.view.generation);ui.view.clear();complete({session:{id:'a',title:'Late private title',status:'idle'},messages:[{id:'late',role:'assistant',text:'late private history'}]});await late;assert.equal(ui.view.providerViews.size,0);assert.equal(ui.view.detailCache.size,0);assert.equal(ui.view.messages.textContent,'');assert.equal(ui.view.rowsRoot.textContent,'');ui.setHandler(async()=>({sessions:[]}));await ui.view.choose('claude');assert.equal(ui.view.rows.length,0);assert.equal(ui.view.sid,null);

@@ -1,10 +1,10 @@
-# 个人发行版 v2.1.14
+# 个人发行版 v2.1.18
 
-下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，与 Dev 共存；版本 2.1.14、构建号 47。首次需要添加电脑，后续保留签名覆盖安装。本次五行执行摘要只需更新电脑网关，已有 Android 2.1.13 无需重新安装；发布包仍提供同签名 APK 供手动更新。更新说明见 [更新说明](../RELEASE_NOTES.md#v2114)。
+下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，版本 2.1.18、构建号 51，沿用原签名。此次 DeepSeek 紧凑布局、过程折叠和实时状态主要随电脑网关与 Harness 插件更新；已有 Android 无需重装。更新电脑网关后，结束 Harness 任务并在客户端与接入中选择“重启并接入”，然后在手机“更多 → 刷新页面”或重新进入电脑连接。更新说明见 [v2.1.18](../RELEASE_NOTES.md#v2118)。
 
 # Android 与 iOS App
 
-本分支的 Android 字体、紧凑布局与 Codex 专用界面说明见 [Android 阅读与执行过程](ANDROID_CUSTOMIZATION.md)。
+本分支的 Android 字体、紧凑布局与 Codex / DeepSeek 聊天界面说明见 [Android 阅读与执行过程](ANDROID_CUSTOMIZATION.md)。
 
 手机扫描网关二维码后连接 Codex、Claude Desktop 和 DeepSeek Harness，电脑继续执行任务。手机 App 保存多台电脑，提供原生扫码、剪贴板、文件下载和通知；浏览器入口同时保留。
 
