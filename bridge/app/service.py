@@ -21,7 +21,7 @@ from bridge.features.sessions.message_management import snapshot as management_s
 from bridge.features.terminals.manager import TerminalManager
 from bridge.features.sessions.side_chat import SideChats
 from bridge.features.sessions import linux_permissions
-from bridge.clients.codex.ipc import DesktopIPC, IPCError
+from bridge.clients.codex.ipc import DesktopIPC, IPCError, THREAD_STREAM_VERSIONS, supports_thread_stream_version
 from bridge.clients.codex.app_server import AppServerError, AppServerUnavailable
 from bridge.clients.codex.cli_session import CliSessions
 from bridge.clients.desktop_app import DesktopApp
@@ -1083,7 +1083,7 @@ class Bridge:
                 if record is None:
                     return
                 try:
-                    if message.get('version') != 11 or message.get('sourceClientId') != record['owner']:
+                    if not supports_thread_stream_version(message.get('version')) or message.get('sourceClientId') != record['owner']:
                         raise ValueError('Desktop owner changed')
                     change = params['change']
                     if type(change.get('revision')) is not int:
@@ -1869,9 +1869,6 @@ class Bridge:
             return
         if message.get("method") != "thread-stream-state-changed":
             return
-        if message.get("version") != 11:
-            self._disconnected()
-            return
         params = message.get("params", {})
         if params.get("hostId") != self.host:
             return
@@ -1889,6 +1886,26 @@ class Bridge:
                 session.owner = message.get("sourceClientId")
                 session.discovering = False
             if not session.owner or message.get("sourceClientId") != session.owner:
+                return
+            if not supports_thread_stream_version(message.get('version')):
+                version = message.get('version')
+                received = f'v{version}' if type(version) is int else '未知版本'
+                supported = '、'.join(f'v{value}' for value in THREAD_STREAM_VERSIONS)
+                error = f'Codex 桌面协议 {received} 暂不受当前网关支持（支持 {supported}），请更新 Codex Mobile Bridge。'
+                if session.error != error:
+                    logging.getLogger(__name__).warning(
+                        'Codex protocol incompatible thread=%s version=%s supported=%s',
+                        session.id, received, supported)
+                # The socket is healthy. Only this verified owner's thread is
+                # incompatible; keep saved history and other followers intact.
+                session.connected = False
+                session.discovering = False
+                session.revision = None
+                session.rebuild_recommended = False
+                session.desktop_restart_recommended = False
+                session.error = error
+                session.access = self._access(session.origin, session)
+                session.changed()
                 return
             reason = 'snapshot_invalid'
             try:

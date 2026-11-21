@@ -51,6 +51,7 @@ class DesktopFixture:
             self.listener.settimeout(.2)
         self.state = state()
         self.revision = 1
+        self.version = 11
         self.host = "local"
         self.requests = []
         self.client = None
@@ -66,7 +67,7 @@ class DesktopFixture:
             self.client.sendall(struct.pack('<I', len(data)) + data)
 
     def publish(self, change):
-        self.send({"type": "broadcast", "sourceClientId": "owner", "method": "thread-stream-state-changed", "version": 11,
+        self.send({"type": "broadcast", "sourceClientId": "owner", "method": "thread-stream-state-changed", "version": self.version,
                    "params": {"hostId": self.host, "conversationId": THREAD, "change": change}})
 
     def snapshot(self):
@@ -159,6 +160,89 @@ class IntegrationTests(unittest.TestCase):
         self.assertNotIn('model', request)
         self.assertNotIn('modelProvider', request)
         self.assertTrue(call['params']['turnStart']['context']['inheritThreadSettings'])
+
+    def test_v13_canonical_snapshot_and_incremental_message(self):
+        self.fixture.version = 13
+        self.fixture.state['turnHistory'] = {'kind': 'canonical', 'history': {
+            'isComplete': True, 'entitiesByKey': {'turn': {
+                'turnId': 'turn', 'status': 'inProgress',
+                'params': {'input': [{'type': 'text', 'text': 'hello'}]},
+                'items': [{'id': 'reply', 'type': 'agentMessage', 'text': 'first'}]}},
+            'islands': [{'entries': [{'value': 'turn'}]}]}}
+        view = self.bridge.view(THREAD)
+        self.assertTrue(view['connected'])
+        self.assertEqual([m['text'] for m in view['turns'][0]['messages']], ['hello', 'first'])
+        self.fixture.publish({'type': 'patches', 'baseRevision': 1, 'revision': 2,
+                              'patches': [{'op': 'replace', 'path': [
+                                  'turnHistory', 'history', 'entitiesByKey', 'turn', 'items', 0, 'text'],
+                                  'value': 'latest streamed reply'}]})
+        session = self.bridge.session(THREAD, attach=False)
+        with session.condition:
+            self.assertTrue(session.condition.wait_for(lambda: session.revision == 2, timeout=2))
+        self.assertEqual(session.view()['turns'][0]['messages'][-1]['text'], 'latest streamed reply')
+
+    def test_v13_controls_keep_native_owner_and_request_versions(self):
+        self.fixture.version = 13
+        self.assertTrue(self.bridge.view(THREAD)['connected'])
+        self.bridge.send(THREAD, 'hello', str(uuid.uuid4()))
+        start = self.fixture.requests[-1]
+        self.assertEqual((start['method'], start['version'], start['targetClientId']),
+                         ('thread-follower-start-turn', 2, 'owner'))
+        session = self.bridge.session(THREAD, attach=False)
+        with session.condition:
+            session.state['turns'] = [{'turnId': 'active', 'status': 'inProgress', 'items': []}]
+            session.state['requests'] = [{'id': 7, 'method': 'item/commandExecution/requestApproval',
+                                          'params': {'command': 'pwd', 'availableDecisions': ['decline']}}]
+        self.bridge.interrupt(THREAD)
+        stop = self.fixture.requests[-1]
+        self.assertEqual((stop['method'], stop['version'], stop['targetClientId']),
+                         ('thread-follower-interrupt-turn', 4, 'owner'))
+        self.assertEqual(stop['params']['expectedTurnId'], 'active')
+        self.bridge.respond(THREAD, 7, {'decision': 'decline'})
+        approval = self.fixture.requests[-1]
+        self.assertEqual((approval['method'], approval['version'], approval['targetClientId']),
+                         ('thread-follower-command-approval-decision', 1, 'owner'))
+
+    def test_unknown_stream_version_is_scoped_and_preserves_history(self):
+        self.assertTrue(self.bridge.view(THREAD)['connected'])
+        session = self.bridge.session(THREAD, attach=False)
+        with session.condition:
+            session.set_history({**state(), 'turns': [{'turnId': 'saved', 'items': [
+                {'type': 'agentMessage', 'text': 'saved reply'}]}]})
+        other = LiveSession('other')
+        other.connected = True
+        self.bridge.live[other.id] = other
+        message = {'method': 'thread-stream-state-changed', 'version': 14, 'sourceClientId': 'owner',
+                   'params': {'hostId': 'local', 'conversationId': THREAD, 'change': {
+                       'type': 'snapshot', 'revision': 2, 'conversationState': state()}}}
+        self.bridge._event(message)
+        view = session.view()
+        self.assertFalse(view['connected'])
+        self.assertIn('v14', view['connectionError'])
+        self.assertIn('协议', view['connectionError'])
+        self.assertIn('更新', view['connectionError'])
+        self.assertFalse(view['rebuildRecommended'])
+        self.assertEqual(view['turns'][0]['messages'][0]['text'], 'saved reply')
+        self.assertTrue(other.connected)
+        self.assertIsNotNone(self.bridge.ipc.client_id)
+        message['version'] = 13
+        self.bridge._event(message)
+        self.assertTrue(session.connected)
+        self.assertIsNone(session.error)
+
+    def test_unrelated_unknown_stream_version_cannot_disconnect_current_thread(self):
+        self.assertTrue(self.bridge.view(THREAD)['connected'])
+        message = {'method': 'thread-stream-state-changed', 'version': 14, 'sourceClientId': 'owner',
+                   'params': {'hostId': 'other-host', 'conversationId': THREAD}}
+        self.bridge._event(message)
+        self.assertTrue(self.bridge.live[THREAD].connected)
+        message['params'] = {'hostId': 'local', 'conversationId': 'unfollowed'}
+        self.bridge._event(message)
+        self.assertTrue(self.bridge.live[THREAD].connected)
+        message['params']['conversationId'] = THREAD
+        message['sourceClientId'] = 'other-owner'
+        self.bridge._event(message)
+        self.assertTrue(self.bridge.live[THREAD].connected)
 
     def test_external_provider_change_does_not_use_stale_managed_account_to_block_send(self):
         from bridge.features.accounts.accounts import Accounts

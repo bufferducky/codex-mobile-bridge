@@ -10,6 +10,15 @@ from concurrent.futures import Future, TimeoutError
 from bridge.clients.codex.transport import connect_stream, endpoint_identity
 
 
+# These event schemas retain snapshot/patch revisions and canonical turnHistory.
+# Request versions below are independent; a newer event version does not bump them.
+THREAD_STREAM_VERSIONS = (11, 13)
+
+
+def supports_thread_stream_version(version):
+    return type(version) is int and version in THREAD_STREAM_VERSIONS
+
+
 class IPCError(Exception):
     pass
 
