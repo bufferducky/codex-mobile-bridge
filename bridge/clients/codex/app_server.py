@@ -23,12 +23,41 @@ class AppServerUnavailable(AppServerError):
     pass
 
 
+class AppServerRequestNotSent(AppServerUnavailable):
+    """This request was rejected before writing any native RPC bytes."""
+
+
+class AppServerMessageTooLarge(ValueError):
+    pass
+
+
+class AppServerReadTimeout(AppServerUnavailable):
+    pass
+
+
 class AppServerUnknownResult(AppServerError):
     """The request may have reached the runtime; the caller must not replay it."""
 
 
 class AppServerUnsupported(AppServerError):
     pass
+
+
+def response_result(method, params, response):
+    """Preserve native rejection semantics across shared runtime transports."""
+    if 'error' in response:
+        error = response['error']
+        code = error.get('code') if isinstance(error, dict) else None
+        detail = error.get('message', 'App-server request failed') if isinstance(error, dict) else str(error)
+        if method in ('thread/archive', 'thread/unarchive'):
+            from bridge.features.sessions.create import ArchiveRejected
+            raise ArchiveRejected(error)
+        if code == -32601:
+            raise AppServerUnsupported(detail)
+        failure = AppServerError(detail)
+        failure.rpc_error = error
+        raise failure
+    return response['result']
 
 
 class _WebSocket:

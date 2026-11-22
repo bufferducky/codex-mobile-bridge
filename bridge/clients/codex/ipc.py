@@ -4,19 +4,85 @@ import logging
 import socket
 import struct
 import threading
+import time
 import uuid
 from concurrent.futures import Future, TimeoutError
 
 from bridge.clients.codex.transport import connect_stream, endpoint_identity
 
 
-# These event schemas retain snapshot/patch revisions and canonical turnHistory.
-# Request versions below are independent; a newer event version does not bump them.
 THREAD_STREAM_VERSIONS = (11, 13)
 
 
 def supports_thread_stream_version(version):
     return type(version) is int and version in THREAD_STREAM_VERSIONS
+
+
+class StreamCompatibilityError(ValueError):
+    pass
+
+
+def validate_stream_version(version):
+    if type(version) is not int or version < 11:
+        raise StreamCompatibilityError('Unsupported desktop stream version')
+
+
+def validate_stream_state(version, state):
+    validate_stream_version(version)
+    # Preserve the v11 parser's partial snapshots; newer streams must prove
+    # their control contract rather than gain an exemption from a known number.
+    if version == 11:
+        return
+
+    def require(condition):
+        if not condition:
+            raise StreamCompatibilityError('Desktop stream control state changed')
+
+    def entities(value):
+        require(isinstance(value, dict))
+        records, islands = value.get('entitiesByKey'), value.get('islands')
+        require(isinstance(records, dict) and isinstance(islands, list))
+        result = []
+        for island in islands:
+            require(isinstance(island, dict) and isinstance(island.get('entries'), list))
+            for entry in island['entries']:
+                require(isinstance(entry, dict) and isinstance(entry.get('value'), str))
+                require(entry['value'] in records)
+                result.append(records[entry['value']])
+        return result
+
+    # Future versions may add fields, but control-critical collections must
+    # remain readable before any existing owner-bound operation can proceed.
+    require(isinstance(state, dict))
+    require(isinstance(state.get('id'), str) and bool(state['id']))
+    require(isinstance(state.get('modelProvider'), str) and bool(state['modelProvider']))
+    require(isinstance(state.get('cwd'), str) and bool(state['cwd']))
+    runtime = state.get('threadRuntimeStatus')
+    # An upstream failure can leave a connected desktop thread in systemError;
+    # it is readable and may accept a fresh turn, but it never proves idle.
+    require(isinstance(runtime, dict) and runtime.get('type') in (
+        'idle', 'active', 'running', 'waiting', 'busy', 'systemError'))
+    requests = state.get('requests')
+    require(isinstance(requests, list))
+    for request in requests:
+        require(isinstance(request, dict))
+        require(type(request.get('id')) in (int, str) and isinstance(request.get('method'), str))
+        require(isinstance(request.get('params', {}), dict))
+    history = state.get('turnHistory')
+    if 'turnHistory' in state:
+        require(isinstance(history, dict) and history.get('kind') == 'canonical')
+        turns = entities(history.get('history'))
+    else:
+        turns = state.get('turns')
+        require(isinstance(turns, list))
+    for turn in turns:
+        require(isinstance(turn, dict) and turn.get('status') in ('inProgress', 'completed', 'failed', 'interrupted'))
+        items = turn.get('items', [])
+        if isinstance(items, dict):
+            items = entities(items) if 'entitiesByKey' in items else items.get('items')
+        require(isinstance(items, list))
+        for item in items:
+            require(isinstance(item, dict) and isinstance(item.get('type'), str))
 
 
 class IPCError(Exception):
@@ -36,6 +102,7 @@ class DesktopIPC:
         "thread-follower-edit-last-user-turn": 2,
         "thread-follower-update-thread-settings": 2,
         "thread-follower-load-complete-history": 1,
+        "thread-follower-compact-thread": 1,
         "thread-follower-steer-turn": 1,
         "thread-follower-interrupt-turn": 4,
         "thread-follower-command-approval-decision": 1,
@@ -44,10 +111,17 @@ class DesktopIPC:
         "thread-follower-submit-user-input": 1,
         "thread-follower-submit-mcp-server-elicitation-response": 1,
         "thread-stream-following-changed": 1,
+        "native-metadata": 0,
     }
 
-    def __init__(self, path, on_event=None, on_disconnect=None):
+    def __init__(self, path, on_event=None, on_disconnect=None, *, codex_home=None):
         self.path = str(path)
+        self.original_path = str(path)
+        self.codex_home = codex_home
+        self.hosted = False
+        self.hosted_generation = None
+        self.legacy = None
+        self.legacy_owners = set()
         self.on_event = on_event or (lambda event: None)
         self.on_disconnect = on_disconnect or (lambda: None)
         self.socket = None
@@ -58,6 +132,7 @@ class DesktopIPC:
         self.write_lock = threading.Lock()
         self.connect_lock = threading.Lock()
         self.event_lock = threading.RLock()
+        self.generation = 0
 
     def reconnect(self):
         """Replace only this follower's transport; never stop the native owner."""
@@ -65,28 +140,74 @@ class DesktopIPC:
             self.close()
         self.connect()
 
+    def hosted_endpoint_changed(self):
+        if self.codex_home is None:
+            return False
+        from bridge.clients.codex.desktop_runtime import hosted_endpoint
+        try:
+            hosted = hosted_endpoint(self.codex_home)
+        except (OSError, ValueError, KeyError, TypeError):
+            return False  # An unverified replacement cannot select a route.
+        with self.lock:
+            return bool(self.socket and hosted and (
+                not self.hosted or self.path != hosted['path'] or
+                self.hosted_generation != hosted['generation']))
+
     def endpoint_changed(self):
         """Report a replacement, without interrupting any pending operation."""
+        if self.hosted_endpoint_changed():
+            return True
         current = endpoint_identity(self.path)
         with self.lock:
             return bool(self.socket and self.endpoint_identity is not None and
                         current is not None and current != self.endpoint_identity)
 
-    def connect(self):
+    def connect(self, *, deadline=None):
         with self.connect_lock:
             if self.client_id and self.socket:
                 return
+            with self.lock:
+                generation = self.generation
+            hosted = None
+            if self.codex_home is not None:
+                from bridge.clients.codex.desktop_runtime import hosted_endpoint
+                try:
+                    hosted = hosted_endpoint(self.codex_home)
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    raise IPCError('原生桌面连接身份无法核验，请在账号管理中检查连接状态。') from exc
+                self.path = hosted['path'] if hosted else self.original_path
+            self.hosted = hosted is not None
+            self.hosted_generation = hosted['generation'] if hosted else None
             try:
                 identity = endpoint_identity(self.path)
-                sock = connect_stream(self.path)
+                if deadline is None:
+                    sock = connect_stream(self.path)
+                else:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise IPCError("桌面读取超时；尚未取得实时会话状态。")
+                    sock = connect_stream(self.path, timeout=min(5, remaining))
             except OSError as exc:
                 raise IPCError("桌面 App 未连接，请打开 Codex App。") from exc
-            self.socket = sock
-            self.endpoint_identity = identity
+            with self.lock:
+                if generation != self.generation or deadline is not None and time.monotonic() >= deadline:
+                    sock.close()
+                    raise IPCError("桌面读取超时；尚未取得实时会话状态。")
+                self.socket = sock
+                self.endpoint_identity = identity
             threading.Thread(target=self._read_loop, args=(sock,), daemon=True).start()
             try:
-                result = self.request("initialize", {"clientType": "codex-mobile-bridge"}, timeout=5)
-                self.client_id = result["result"]["clientId"]
+                params = {"clientType": "codex-mobile-bridge"}
+                if hosted:
+                    params.update({key: hosted[key] for key in ('generation', 'controlToken')})
+                result = self.request("initialize", params, timeout=5, deadline=deadline)
+                if hosted and hosted_endpoint(self.codex_home) != hosted:
+                    raise IPCError('原生桌面连接在握手期间已变化。')
+                with self.lock:
+                    if (generation != self.generation or self.socket is not sock or
+                            deadline is not None and time.monotonic() >= deadline):
+                        raise IPCError("桌面读取超时；尚未取得实时会话状态。")
+                    self.client_id = result["result"]["clientId"]
             except Exception:
                 self.close()
                 raise
@@ -104,9 +225,15 @@ class DesktopIPC:
             except OSError as exc:
                 raise IPCError("桌面连接已断开；请检查会话后再决定是否重发。") from exc
 
-    def request(self, method, params, target=None, host="local", timeout=15):
+    def request(self, method, params, target=None, host="local", timeout=15, *, deadline=None, legacy_discovery=False):
         if method not in self.VERSIONS:
             raise IPCError("不支持的桌面操作")
+        if self.hosted and (target in self.legacy_owners or host != 'local'):
+            return self._legacy_request(method, params, target, host, timeout, deadline)
+        if deadline is not None:
+            timeout = min(timeout, max(0, deadline - time.monotonic()))
+            if timeout <= 0:
+                raise IPCError("桌面读取超时；尚未取得实时会话状态。")
         request_id = str(uuid.uuid4())
         future = Future()
         with self.lock:
@@ -123,9 +250,18 @@ class DesktopIPC:
                 message["version"] += 1
         try:
             self._send(message)
-            response = future.result(timeout=timeout + 1)
+            # Lifecycle audits share an absolute deadline. The ordinary mutation
+            # path retains its acknowledgement grace and unknown-result handling.
+            wait = timeout + 1 if deadline is None else min(timeout, max(0, deadline - time.monotonic()))
+            response = future.result(timeout=wait)
             if response.get("resultType") != "success":
-                raise IPCError(response.get("error", "桌面请求未完成"))
+                # Only an explicit negative discovery may try the old router.
+                # Timeouts, unknown results and mutations never switch routes.
+                if legacy_discovery and self.hosted and method == 'thread-owner-discovery' and response.get('error') == 'no-client-found':
+                    return self._legacy_request(method, params, target, host, timeout, deadline)
+                error = IPCError(response.get("error", "桌面请求未完成"))
+                error.not_sent = response.get('notSent') is True
+                raise error
             return response
         except TimeoutError as exc:
             if method in ("initialize", "thread-owner-discovery", "thread-follower-load-complete-history"):
@@ -135,19 +271,53 @@ class DesktopIPC:
             with self.lock:
                 self.pending.pop(request_id, None)
 
-    def owner(self, session_id, host="local"):
+    def _legacy_connection(self, deadline=None):
+        with self.lock:
+            if self.legacy is None:
+                self.legacy = DesktopIPC(self.original_path, self.on_event, self._legacy_disconnected)
+            client = self.legacy
+        client.connect(deadline=deadline)
+        return client
+
+    def _legacy_disconnected(self):
+        with self.lock:
+            owners = self.legacy_owners.copy()
+            self.legacy_owners.clear()
+        for owner in owners:
+            self.on_event({'method': 'client-status-changed',
+                           'params': {'clientId': owner, 'status': 'disconnected'}})
+
+    def _legacy_request(self, method, params, target, host, timeout, deadline):
+        client = self._legacy_connection(deadline)
+        response = client.request(method, params, target, host, timeout, deadline=deadline)
+        if method == 'thread-owner-discovery' and response.get('handledByClientId'):
+            with self.lock:
+                self.legacy_owners.add(response['handledByClientId'])
+        return response
+
+    def owner(self, session_id, host="local", *, legacy_discovery=True):
         self.connect()
         response = self.request("thread-owner-discovery", {
-            "hostId": host, "conversationId": session_id}, timeout=6)
+            "hostId": host, "conversationId": session_id}, timeout=6, legacy_discovery=legacy_discovery)
         return response["handledByClientId"]
 
     def follow(self, session_id, owner, enabled=True, host="local"):
+        if self.hosted and (owner in self.legacy_owners or host != 'local'):
+            return self._legacy_connection().follow(session_id, owner, enabled, host)
         message = {"type": "broadcast", "sourceClientId": self.client_id,
                    "method": "thread-stream-following-changed", "version": 1,
                    "params": {"hostId": host, "conversationId": session_id, "following": enabled}}
         if owner:
             message["targetClientIds"] = [owner]
         self._send(message)
+
+    def invalidate_attached_threads(self, parent_id):
+        """Refresh native metadata after a confirmed mutation, using our identity."""
+        uuid.UUID(parent_id)
+        self.connect()
+        self._send({'type': 'broadcast', 'sourceClientId': self.client_id,
+                    'method': 'query-cache-invalidate', 'version': 0,
+                    'params': {'queryKey': ['attached-side-chats', 'local', parent_id], 'reset': False}})
 
     @staticmethod
     def _exact(sock, length):
@@ -191,7 +361,12 @@ class DesktopIPC:
             self._disconnect(sock)
 
     def close(self):
-        self._disconnect(self.socket)
+        with self.lock:
+            self.generation += 1
+            sock = self.socket
+        self._disconnect(sock)
+        if self.legacy is not None:
+            self.legacy.close()
 
     def _disconnect(self, sock):
         if sock is None:

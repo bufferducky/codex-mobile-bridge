@@ -271,7 +271,8 @@ class Bridge:
         self.cli_sessions = cli_sessions or CliSessions(self.codex_home, self._cli_state, self._cli_disconnected, alias=alias)
         self.lock = threading.RLock()
         self.reconnect_pending = {}
-        self.ipc = DesktopIPC(ipc_path or ipc_endpoint(codex_home), self._event, self._disconnected)
+        self.ipc = DesktopIPC(ipc_path or ipc_endpoint(codex_home), self._event, self._disconnected,
+                              codex_home=codex_home if host == 'local' and not ipc_path else None)
         self.side_chats = SideChats(codex_bin, self.codex_home, self.data_dir, host,
                                    executable_getter=executable_getter)
         self.closed = threading.Event()
@@ -1119,7 +1120,10 @@ class Bridge:
             except (TypeError, AttributeError, KeyError) as exc:
                 raise ValueError(unknown) from exc
 
-        ipc = DesktopIPC(self.ipc.path, on_event=event, on_disconnect=disconnect)
+        codex_home = getattr(self.ipc, 'codex_home', None)
+        options = {'codex_home': codex_home} if codex_home is not None else {}
+        ipc = DesktopIPC(getattr(self.ipc, 'original_path', self.ipc.path),
+                         on_event=event, on_disconnect=disconnect, **options)
         try:
             remaining()
             try:
@@ -1667,14 +1671,16 @@ class Bridge:
                         session.changed()
                 return
             try:
-                # Owners answer a follow with a fresh snapshot. This also works
-                # for remote/background owners absent from owner-discovery.
+                # Hosted Desktop verifies that the original native runtime loaded the chat.
+                # Legacy owners can answer a broadcast even when discovery is unavailable.
                 self.ipc.connect()
+                owner = (self.ipc.owner(session.id, host=self.host, legacy_discovery=False)
+                         if getattr(self.ipc, 'hosted', False) and self.host == 'local' else None)
                 with session.condition:
-                    session.owner = None
+                    session.owner = owner
                     session.revision = None
                     session.discovering = True
-                self.ipc.follow(session.id, None, host=self.host)
+                self.ipc.follow(session.id, owner, host=self.host)
                 with session.condition:
                     session.condition.wait_for(lambda: session.connected or self.closed.is_set(), timeout=timeout)
                     # Keep following: a cold chat can publish after this short
@@ -1736,6 +1742,10 @@ class Bridge:
             raise IPCError('此会话不使用桌面连接，请使用继续会话。')
         # The host operation gate drains pending writes before this read-only
         # follower connection is replaced. Native tasks keep their original owner.
+        if getattr(self.ipc, 'hosted', False) and self.ipc.socket and not self.ipc.endpoint_changed():
+            with session.condition:
+                session.last_activation = None
+            return self.activate(thread_id)
         rebuilt = False
         try:
             self._rebuild_desktop_transport()
@@ -1759,7 +1769,7 @@ class Bridge:
         with session.activation_lock:
             endpoint_changed = not _transport_rebuilt and session.runtime == 'desktop' and self.ipc.endpoint_changed()
             replace_transport = endpoint_changed or (not _transport_rebuilt and session.runtime == 'desktop' and
-                not session.connected and session.rebuild_recommended)
+                not getattr(self.ipc, 'hosted', False) and not session.connected and session.rebuild_recommended)
             if session.connected and not replace_transport:
                 return session
             with session.condition:
@@ -1859,7 +1869,9 @@ class Bridge:
                 with self.lock:
                     sessions = list(self.live.values())
                 for session in sessions:
-                    if session.owner == params.get("clientId"):
+                    if (session.owner == params.get("clientId") and
+                            (not params.get('conversationId') or params.get('hostId') == self.host
+                             and params['conversationId'] == session.id)):
                         self._invalidate(session, "桌面会话连接已断开，正在等待重连", runtime='desktop',
                                          owner=params.get("clientId"), reason='desktop_client_disconnected')
             # Owner changes can make previously unanswered probes available.
@@ -1980,6 +1992,23 @@ class Bridge:
                 self._invalidate(session, "桌面 App 连接已断开，正在等待重连", runtime='desktop',
                                  reason='desktop_ipc_disconnected')
 
+    def _recover_desktop_transport(self):
+        changed = getattr(self.ipc, 'hosted_endpoint_changed', None)
+        if changed is None or not changed():
+            return
+        gate = self.accounts.gate if self.accounts is not None else None
+        if gate is not None and not gate.acquire(blocking=False):
+            return
+        try:
+            if changed():
+                self._rebuild_desktop_transport()
+        except IPCError:
+            # Keep the maintenance loop alive while the original App starts.
+            return
+        finally:
+            if gate is not None:
+                gate.release()
+
     def _maintain(self):
         delay = 3
         while not self.closed.wait(delay):
@@ -1988,6 +2017,7 @@ class Bridge:
                     self.accounts.check_ready()
                 except ValueError:
                     continue
+            self._recover_desktop_transport()
             with self.lock:
                 sessions = list(self.live.values())
             for session in sessions:
@@ -3194,8 +3224,10 @@ class Bridge:
         submission_id = key.split(":")[1]
         text = entry["text"]
         files = self.uploads.resolve(session.id, entry.get('attachments', []))
-        # CLI start already adds context.fileAttachments to its prompt.
-        if session.runtime != 'cli':
+        ipc = getattr(self, 'ipc', None)
+        hosted = getattr(ipc, 'hosted', False) and session.owner not in ipc.legacy_owners
+        # Native app-server transports add context.fileAttachments to the prompt.
+        if session.runtime != 'cli' and not hosted:
             text = attachment_prompt(text, files)
         request = {"threadId": session.id, "input": [{"type": "text", "text": text, "text_elements": []}], "clientUserMessageId": submission_id}
         request['input'].extend({'type': 'localImage', 'path': f['path']} for f in files if f['image'])

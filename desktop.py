@@ -3,6 +3,16 @@
 import argparse
 import json
 import sys
+if sys.argv[1:2] == ['codex-desktop-runtime']:
+    runtime_parser = argparse.ArgumentParser()
+    runtime_parser.add_argument('--configuration', required=True)
+    runtime_parser.add_argument('native_args', nargs=argparse.REMAINDER)
+    runtime_options = runtime_parser.parse_args(sys.argv[2:])
+    native_args = runtime_options.native_args
+    if native_args[:1] == ['--']:
+        native_args = native_args[1:]
+    from bridge.clients.codex.desktop_runtime_host import run as runtime_main
+    raise SystemExit(runtime_main(runtime_options.configuration, native_args))
 if len(sys.argv) == 3 and sys.argv[1] == '--terminal-child':
     if sys.platform == 'win32':
         from bridge.platforms.windows.terminal import child_main
@@ -17,7 +27,7 @@ def main():
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stdin.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['management-stream', 'tailscale-setup', 'read-credentials', 'server-setup', 'connection-credentials', 'snapshot-stream', 'snapshot', 'save', 'start', 'stop', 'logs', 'test-notification', 'webhook-endpoint', 'deployment', 'export-deployment', 'check-entry', 'devices', 'pairing', 'account', 'accounts', 'cli-access', 'harness', 'desktop-sessions', 'notification-watches', 'transfer-settings', 'network-adaptation', 'serve', 'update-prepare', 'update-apply'])
+    parser.add_argument('action', choices=['management-stream', 'tailscale-setup', 'read-credentials', 'server-setup', 'connection-credentials', 'snapshot-stream', 'snapshot', 'save', 'start', 'stop', 'prepare-codex-desktop', 'logs', 'test-notification', 'webhook-endpoint', 'deployment', 'export-deployment', 'check-entry', 'devices', 'pairing', 'account', 'accounts', 'cli-access', 'harness', 'desktop-sessions', 'notification-watches', 'transfer-settings', 'network-adaptation', 'serve', 'update-prepare', 'update-apply'])
     parser.add_argument('--data-dir', required=True)
     parser.add_argument('--plan')
     parser.add_argument('--connection-secrets-stdin', action='store_true')

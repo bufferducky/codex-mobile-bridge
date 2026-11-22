@@ -122,6 +122,31 @@ class Desktop:
         return {**defaults, **{k: v for k, v in saved.items() if k not in access.DEFAULTS},
                 'connections': rows, 'tunnel': any(c['enabled'] and c['accessMode'] == 'quick' for c in rows)}
 
+    def prepare_codex_desktop(self):
+        from bridge.clients.codex.app_server import AppServerUnavailable
+        from bridge.clients.codex.desktop_runtime import connect
+        from bridge.clients.desktop_app import DesktopApp
+        preferences = self.preferences()
+        if preferences['ipcPath']:
+            raise ValueError('当前配置使用自定义 IPC，请在默认 Codex 接入中准备原生连接')
+        runtime = preferences['codexBin'] or Catalog.find_runtime()
+        if not runtime:
+            raise ValueError('未找到 Codex CLI 运行时')
+        codex_home = Path(preferences['codexHome']).expanduser().resolve()
+        app = DesktopApp(DesktopApp.scan(runtime, codex_home), codex_home)
+        app.prepare_native_start(runtime)
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
+            try:
+                connection = connect(codex_home, runtime)
+            except AppServerUnavailable:
+                connection = None
+            if connection is not None:
+                connection.close()
+                return {'running': True, 'nativeConnection': 'ready'}
+            time.sleep(.25)
+        raise ValueError('Codex 已收到启动请求，但原生连接尚未就绪，请核对桌面启动状态')
+
     def status(self):
         preferences = self.preferences()
         connected, supports, instance = False, False, None

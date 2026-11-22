@@ -880,7 +880,7 @@ class CliSessions:
             self._invalidate(thread_id)
             raise AppServerUnavailable('CLI thread identity changed before the operation')
 
-    def _event(self, event):
+    def _event(self, event, *, publish=True):
         method = event.get('method')
         params = event.get('params') or {}
         thread_id = params.get('threadId')
@@ -982,10 +982,11 @@ class CliSessions:
                         item['aggregatedOutput'] = item.get('aggregatedOutput', '') + params['delta']
             else:
                 return
-            snapshot = copy.deepcopy(state)
-        self.on_state(thread_id, snapshot)
+            snapshot = copy.deepcopy(state) if publish else None
+        if snapshot is not None:
+            self.on_state(thread_id, snapshot)
 
-    def _server_request(self, request):
+    def _server_request(self, request, *, publish=True):
         thread_id = (request.get('params') or {}).get('threadId')
         with self.lock:
             if thread_id not in self.joined and thread_id not in self.attaching:
@@ -996,7 +997,7 @@ class CliSessions:
             state = self.states.get(thread_id)
             if state is not None:
                 state['requests'] = list(self.requests[thread_id].values())
-                snapshot = copy.deepcopy(state)
+                snapshot = copy.deepcopy(state) if publish else None
             else:
                 snapshot = None
         if snapshot is not None:
@@ -1068,7 +1069,7 @@ class CliSessions:
             self.refresh_pending.clear()
         self.on_disconnect()
 
-    def _invalidate(self, thread_id, expected_process=None):
+    def _invalidate(self, thread_id, expected_process=None, *, notify=True):
         with self.lock:
             if expected_process is not None and self.joined.get(thread_id) is not expected_process:
                 return
@@ -1083,7 +1084,8 @@ class CliSessions:
             self.states.pop(thread_id, None)
             self.requests.pop(thread_id, None)
             self.consumed_requests.pop(thread_id, None)
-        self.on_disconnect(thread_id)
+        if notify:
+            self.on_disconnect(thread_id)
 
     def close(self):
         self.client.close()

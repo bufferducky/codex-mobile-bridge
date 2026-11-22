@@ -119,9 +119,32 @@ class DesktopApp:
             return launch_windows_desktop(self.executable, cancelled=cancelled, **options)
         return subprocess.Popen([str(self.executable)], **options)
 
+    def prepare_native_start(self, runtime):
+        if sys.platform != 'darwin':
+            raise ValueError('此接入准备入口仅支持 macOS')
+        from bridge.clients.codex.desktop_runtime import configure, initialization_lock, validate_runtime
+        self.validate(runtime)
+        if self.processes():
+            raise ValueError('请在桌面 Codex 的任务结束后完整退出，再启动原生连接')
+        validate_runtime(runtime)
+        with initialization_lock(self.home):
+            if self.processes():
+                raise ValueError('Codex 已启动，请退出后重新准备原生连接')
+            configure(self.home, self.executable, runtime)
+            if self.processes():
+                raise ValueError('Codex 已通过其他入口启动，请退出后重新准备原生连接')
+            self.start()
+
     def start(self):
         environment = {'CODEX_HOME': str(self.home)}
         if sys.platform == 'darwin':
+            from bridge.clients.codex.desktop_runtime import launch_environment, wait_stopped
+            prepared = launch_environment(self.home, self.executable)
+            if prepared:
+                wait_stopped(self.home)
+                if self.processes():
+                    raise ValueError('Codex 已启动，请退出后重新准备原生连接')
+                environment.update(prepared)
             _native().start(self.executable, self.home, environment)
             return
         if sys.platform == 'win32':
