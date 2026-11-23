@@ -1,6 +1,6 @@
-# 个人发行版 v2.1.18
+# 个人发行版 v2.1.19
 
-下载与更新来源：[bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases)。Android 正式包名 `io.github.bufferducky.codexbridge`，版本 2.1.18、构建号 51，沿用原签名。此次 DeepSeek 紧凑布局、过程折叠和实时状态主要随电脑网关与 Harness 插件更新；已有 Android 无需重装。更新电脑网关后，结束 Harness 任务并在客户端与接入中选择“重启并接入”，然后在手机“更多 → 刷新页面”或重新进入电脑连接。更新说明见 [v2.1.18](../RELEASE_NOTES.md#v2118)。
+本次更新适配新版 Codex 桌面的原生会话连接。Android 正式包名为 `io.github.bufferducky.codexbridge`，版本 2.1.19，构建号 52，沿用原签名。更新 Mac 网关后，已有 Android 可重新打开原聊天。 [下载与更新](https://github.com/bufferducky/codex-mobile-bridge/releases) · [v2.1.19 更新说明](../RELEASE_NOTES.md#v2119)
 
 # Android 与 iOS App
 

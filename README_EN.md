@@ -1,4 +1,4 @@
-> **Personal release**: Download this fork from [bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases). Current version: **2.1.18**. DeepSeek Harness gains the compact Codex-style phone layout, collapsed native context and execution groups, live reply previews, current activity and resilient detail reads. Ships macOS Apple Silicon / Intel and Android with existing signing identities. Update the PC gateway, finish Harness tasks and use **Restart and connect** to load the new connector, then refresh the phone page. Existing Android installations remain usable. See [release notes](RELEASE_NOTES.md#v2118). Historical upstream information follows.
+> **Personal release v2.1.19** supports the native session connection in newer Codex Desktop versions. Available for macOS Apple Silicon, macOS Intel, and Android with the existing signing identity. Existing Android users can reopen the chat after updating the Mac gateway. Historical upstream information follows. [Personal releases](https://github.com/bufferducky/codex-mobile-bridge/releases) · [Release notes](RELEASE_NOTES.md#v2119)
 
 <p align="center">
 

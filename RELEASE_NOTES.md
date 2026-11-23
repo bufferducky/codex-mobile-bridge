@@ -1,3 +1,18 @@
+<a id="v2119"></a>
+
+## v2.1.19 · 适配新版 Codex 桌面连接
+
+桌面与手机版本为 **2.1.19**，手机构建号为 **52**。提供 Mac Apple Silicon、Mac Intel 和同签名 Android 安装包。
+
+- 新版 Codex 桌面将会话运行时移入宿主进程。个人版 Bridge 接入桌面持有的原生运行时，可读取实时会话、发送消息、停止运行和处理审批。旧版桌面仍支持原有 IPC。
+- 手机断线重连时重新核验原会话与运行时。Bridge 保留原执行环境和历史，发送结果未知时由用户检查原聊天后决定是否重发。
+
+在 Mac Bridge 的「应用更新」中安装新版。更新前先结束桌面 Codex 的任务和待审批并完整退出 Codex。已准备过原生连接的用户，在 Bridge 更新后从 Bridge 重新启动 Codex，再在手机打开原聊天。已有 Android 可继续使用。
+
+Native session sync now supports newer Codex Desktop on macOS alongside legacy IPC. The gateway connects to the Desktop-owned runtime for live updates, messages, interruption, and approvals. Finish active Codex tasks and quit Codex before updating Bridge, then reopen it through Bridge and reconnect on Android.
+
+---
+
 <a id="v2118"></a>
 
 ## v2.1.18 · DeepSeek 手机聊天体验对齐

@@ -1,4 +1,4 @@
-> **个人发行版**：从 [bufferducky/codex-mobile-bridge Releases](https://github.com/bufferducky/codex-mobile-bridge/releases) 下载本分支安装包。当前版本 **2.1.18**：DeepSeek Harness 手机端对齐 Codex 的紧凑布局，系统上下文默认收起，思考与工具按轮次折叠，支持原生实时回复、当前动作及详情断线恢复。提供 Mac Apple Silicon / Intel 与 Android 同签名包。更新电脑网关后，结束 Harness 任务并按提示“重启并接入”加载新插件，再在手机刷新页面；已有 Android 无需重装。参见 [更新说明](RELEASE_NOTES.md#v2118)。以下历史说明保留原项目来源。
+> **个人发行版 v2.1.19** 适配新版 Codex 桌面的原生会话连接。提供 Mac Apple Silicon、Mac Intel 和同签名 Android 安装包。已有 Android 可在电脑网关更新后重新打开会话。以下保留原项目说明。 [个人版发布页](https://github.com/bufferducky/codex-mobile-bridge/releases) · [更新说明](RELEASE_NOTES.md#v2119)
 
 <p align="center">
 
